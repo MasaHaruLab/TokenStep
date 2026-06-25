@@ -470,6 +470,12 @@ private struct ActivityHoverBadge: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            if !modelSummary.isEmpty {
+                Text(modelSummary)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color.tokenGreen.opacity(0.8))
+                    .lineLimit(1)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -490,6 +496,15 @@ private struct ActivityHoverBadge: View {
             .map { "\($0.name) \(TokenStepFormat.tokens($0.tokens, compact: true))" }
             .joined(separator: " · ")
     }
+
+    private var modelSummary: String {
+        day.models
+            .filter { $0.value > 0 }
+            .sorted { $0.value > $1.value }
+            .prefix(3)
+            .map { "\(modelDisplayName($0.key)) \(TokenStepFormat.tokens($0.value, compact: true))" }
+            .joined(separator: " · ")
+    }
 }
 
 private func dailyUsageHoverText(_ day: DailyUsage, goal: Int) -> String {
@@ -497,10 +512,16 @@ private func dailyUsageHoverText(_ day: DailyUsage, goal: Int) -> String {
     let tools = orderedToolEntries(day.tools)
         .map { "\($0.name) \(TokenStepFormat.tokens($0.tokens, compact: true))" }
         .joined(separator: " · ")
-    if tools.isEmpty {
-        return "\(day.date)\n\(TokenStepFormat.tokens(day.totalTokens)) · \(progress)"
-    }
-    return "\(day.date)\n\(TokenStepFormat.tokens(day.totalTokens)) · \(progress)\n\(tools)"
+    let models = day.models
+        .filter { $0.value > 0 }
+        .sorted { $0.value > $1.value }
+        .prefix(3)
+        .map { "\(modelDisplayName($0.key)) \(TokenStepFormat.tokens($0.value, compact: true))" }
+        .joined(separator: " · ")
+    var lines = ["\(day.date)", "\(TokenStepFormat.tokens(day.totalTokens)) · \(progress)"]
+    if !tools.isEmpty { lines.append(L("客户端") + ": \(tools)") }
+    if !models.isEmpty { lines.append(L("模型") + ": \(models)") }
+    return lines.joined(separator: "\n")
 }
 
 struct TokenToolLegend: View {
@@ -632,6 +653,21 @@ func tokenToolColor(_ tool: String) -> Color {
     default:
         return Color.tokenInk.opacity(0.44)
     }
+}
+
+func modelDisplayName(_ model: String) -> String {
+    // Shorten common prefixes for display compactness
+    let short: [String: String] = [
+        "claude-opus-4-8": "Opus 4.8",
+        "claude-opus-4-7": "Opus 4.7",
+        "claude-sonnet-4-6": "Sonnet 4.6",
+        "claude-haiku-4-5-20251001": "Haiku 4.5",
+        "claude-fable-5": "Fable 5",
+        "deepseek-v4-pro": "DS V4 Pro",
+        "deepseek-v4-flash": "DS V4 Flash",
+        "gpt-5.5": "GPT-5.5",
+    ]
+    return short[model] ?? model
 }
 
 func orderedToolEntries(_ tools: [String: Int]) -> [(name: String, tokens: Int)] {

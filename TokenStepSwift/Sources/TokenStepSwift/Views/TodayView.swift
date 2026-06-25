@@ -56,6 +56,24 @@ struct TodayView: View {
                         MetricPill(label: L("消耗金额"), value: TokenStepFormat.money(appState.today.cost))
                         MetricPill(label: L("本月均值"), value: TokenStepFormat.tokens(appState.monthAverage, compact: true))
                     }
+
+                    Button {
+                        appState.refresh()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.caption.weight(.heavy))
+                            Text(L("刷新"))
+                                .font(.caption.weight(.bold))
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.plain)
+                    .background(Color.tokenSurface.opacity(0.9), in: Capsule())
+                    .overlay(Capsule().stroke(Color.black.opacity(0.06)))
+                    .disabled(appState.isRefreshing)
                 }
 
                 Spacer(minLength: 0)
