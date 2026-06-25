@@ -62,6 +62,7 @@ struct TodayBreakdownRow: Identifiable {
 private struct TodayBreakdownRowView: View {
     var row: TodayBreakdownRow
     var color: Color
+    @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -91,5 +92,19 @@ private struct TodayBreakdownRowView: View {
                 .frame(width: 126, alignment: .trailing)
         }
         .frame(height: 24)
+        .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
+        .overlay(alignment: .trailing) {
+            if isHovering {
+                Text("\(TokenStepFormat.tokens(row.tokens)) tokens")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.tokenInk.opacity(0.82), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .offset(y: -28)
+            }
+        }
+        .animation(.easeOut(duration: 0.1), value: isHovering)
     }
 }

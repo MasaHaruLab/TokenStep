@@ -83,9 +83,9 @@ struct TodayView: View {
 
     private var metricStrip: some View {
         HStack(spacing: 18) {
-            CompactMetricCard(label: L("累计 Token 消耗"), value: TokenStepFormat.tokens(appState.snapshot.totals.tokens), detail: L("所有本机记录"))
-            CompactMetricCard(label: L("活跃天数"), value: localizedDays(appState.snapshot.totals.activeDays), detail: L("有 AI 使用的日期"))
-            CompactMetricCard(label: L("达标天数"), value: localizedDays(appState.goalDays), detail: L("达到每日目标"))
+            CompactMetricCard(label: L("累计 Token"), value: TokenStepFormat.tokens(appState.snapshot.totals.tokens), detail: L("所有客户端总计"))
+            CompactMetricCard(label: L("活跃天数"), value: localizedDays(appState.snapshot.totals.activeDays), detail: String(format: L("%%d 天有 AI 使用"), appState.snapshot.totals.activeDays))
+            CompactMetricCard(label: L("达标天数"), value: localizedDays(appState.goalDays), detail: String(format: L("%%d 天超过每日目标"), appState.goalDays))
         }
     }
 

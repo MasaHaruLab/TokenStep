@@ -569,6 +569,7 @@ struct ContributionWallView: View {
     var rows: [DailyUsage]
     var goal: Int
     var weeks: Int = 34
+    @State private var hoveredDate: String?
 
     private var rowByDate: [String: DailyUsage] {
         Dictionary(uniqueKeysWithValues: rows.map { ($0.date, $0) })
@@ -583,25 +584,51 @@ struct ContributionWallView: View {
         let start = calendar.date(byAdding: .day, value: -mondayOffset, to: rawStart) ?? rawStart
 
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 5) {
-                ForEach(0..<weeks, id: \.self) { week in
-                    VStack(spacing: 5) {
-                        ForEach(0..<7, id: \.self) { dayIndex in
-                            let day = calendar.date(byAdding: .day, value: week * 7 + dayIndex, to: start) ?? today
-                            let key = DateFormatter.tokenStepDay.string(from: day)
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(day > today ? Color.clear : contributionColor(tokens: rowByDate[key]?.totalTokens ?? 0, goal: goal))
-                                .frame(width: 15, height: 15)
-                                .overlay {
-                                    if calendar.isDate(day, inSameDayAs: today) {
-                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                            .stroke(Color.tokenGreenDark, lineWidth: 1.5)
+            ZStack(alignment: .topTrailing) {
+                HStack(alignment: .top, spacing: 5) {
+                    ForEach(0..<weeks, id: \.self) { week in
+                        VStack(spacing: 5) {
+                            ForEach(0..<7, id: \.self) { dayIndex in
+                                let day = calendar.date(byAdding: .day, value: week * 7 + dayIndex, to: start) ?? today
+                                let key = DateFormatter.tokenStepDay.string(from: day)
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(day > today ? Color.clear : contributionColor(tokens: rowByDate[key]?.totalTokens ?? 0, goal: goal))
+                                    .frame(width: 15, height: 15)
+                                    .overlay {
+                                        if calendar.isDate(day, inSameDayAs: today) {
+                                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                                .stroke(Color.tokenGreenDark, lineWidth: 1.5)
+                                        }
                                     }
-                                }
+                                    .contentShape(Rectangle())
+                                    .onHover { isHovering in
+                                        hoveredDate = isHovering ? key : (hoveredDate == key ? nil : hoveredDate)
+                                    }
+                            }
                         }
                     }
                 }
+
+                if let date = hoveredDate,
+                   let usage = rowByDate[date],
+                   usage.totalTokens > 0 {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(date)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                        Text(TokenStepFormat.tokens(usage.totalTokens))
+                            .font(.caption.weight(.heavy))
+                            .foregroundStyle(Color.tokenInk)
+                            .monospacedDigit()
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.tokenSurface.opacity(0.96), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.black.opacity(0.06)))
+                    .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 4)
+                }
             }
+            .animation(.easeOut(duration: 0.1), value: hoveredDate)
 
             HStack {
                 MetricPill(label: L("活跃"), value: localizedDays(rows.filter { $0.totalTokens > 0 }.count))
