@@ -8,6 +8,9 @@ struct TodayView: View {
             hero
             todayBreakdownStrip
             metricStrip
+            if appState.settings.showCodexQuota, appState.hasAnyQuota {
+                quotaCard
+            }
         }
     }
 
@@ -98,6 +101,95 @@ struct TodayView: View {
 
     private func localizedDays(_ count: Int) -> String {
         TokenStepLocalization.language == .en ? "\(count)d" : "\(count) 天"
+    }
+
+    private var quotaCard: some View {
+        TokenCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(Color.tokenGreen)
+                        .frame(width: 8, height: 8)
+                    Text(L("剩余额度"))
+                        .font(.headline.weight(.heavy))
+                        .foregroundStyle(Color.tokenInk)
+                    Spacer()
+                    if let fetchedAt = appState.claudeQuota.fetchedAt ?? appState.codexQuota.fetchedAt {
+                        let seconds = max(0, Int(Date().timeIntervalSince(fetchedAt).rounded()))
+                        let text = seconds < 60 ? L("刚刚") : String(format: L("%%d 分钟前"), max(1, seconds / 60))
+                        Text(text)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                HStack(alignment: .top, spacing: 28) {
+                    if appState.claudeQuota.isAvailable {
+                        quotaColumn(title: "Claude", quota: appState.claudeQuota)
+                    }
+                    if appState.codexQuota.isAvailable {
+                        quotaColumn(title: "Codex", quota: appState.codexQuota)
+                    }
+                }
+            }
+        }
+    }
+
+    private func quotaColumn(title: String, quota: CodexQuotaSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption.weight(.heavy))
+                .foregroundStyle(Color.tokenInk.opacity(0.72))
+            quotaRow("5h", window: quota.fiveHour)
+            quotaRow("7d", window: quota.sevenDay)
+        }
+    }
+
+    private func quotaRow(_ label: String, window: CodexQuotaWindow?) -> some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(.caption.weight(.heavy))
+                .foregroundStyle(Color.tokenInk.opacity(0.62))
+                .frame(width: 22, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(window.map { String(format: "%.0f%%", $0.remainingPercent) } ?? "--")
+                        .font(.caption.weight(.heavy))
+                        .foregroundStyle(window == nil ? .secondary : Color.tokenInk.opacity(0.82))
+                        .monospacedDigit()
+                    Spacer()
+                    Text(quotaResetText(window?.resetsAt))
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.tokenGreen.opacity(0.10))
+                        if let window {
+                            Capsule()
+                                .fill(Color.tokenGreen)
+                                .frame(width: max(5, proxy.size.width * window.remainingPercent / 100))
+                        }
+                    }
+                }
+                .frame(height: 6)
+            }
+        }
+    }
+
+    private func quotaResetText(_ date: Date?) -> String {
+        guard let date else { return L("等待重置") }
+        let seconds = max(0, Int(date.timeIntervalSinceNow.rounded()))
+        if seconds < 60 { return L("即将重置") }
+        if seconds < 3_600 { return String(format: L("%%d 分后重置"), max(1, seconds / 60)) }
+        if seconds < 86_400 {
+            let h = seconds / 3_600
+            let m = (seconds % 3_600) / 60
+            return String(format: L("约 %d:%02d 后重置"), h, m)
+        }
+        return String(format: L("%%d 天后重置"), max(1, Int(ceil(Double(seconds) / 86_400))))
     }
 
     private var todayToolRows: [TodayBreakdownRow] {
