@@ -340,7 +340,7 @@ private struct TokenIslandQuotaMiniView: View {
             Text((window?.title ?? fallback).replacingOccurrences(of: " ", with: ""))
                 .font(.system(size: 9, weight: .heavy, design: .rounded))
                 .foregroundStyle(Color.tokenInk.opacity(0.50))
-            Text(window.map { TokenStepFormat.percent($0.remainingPercent) } ?? "—")
+            Text(window.map { TokenStepFormat.percent($0.usedPercent) } ?? "—")
                 .font(.system(size: 9, weight: .heavy, design: .rounded))
                 .foregroundStyle(Color.tokenGreen)
                 .monospacedDigit()

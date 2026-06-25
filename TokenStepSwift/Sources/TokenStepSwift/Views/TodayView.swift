@@ -110,7 +110,7 @@ struct TodayView: View {
                     Circle()
                         .fill(Color.tokenGreen)
                         .frame(width: 8, height: 8)
-                    Text(L("剩余额度"))
+                    Text(L("已用额度"))
                         .font(.headline.weight(.heavy))
                         .foregroundStyle(Color.tokenInk)
                     Spacer()
@@ -154,7 +154,7 @@ struct TodayView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(window.map { String(format: "%.0f%%", $0.remainingPercent) } ?? "--")
+                    Text(window.map { String(format: "已用 %.0f%%", $0.usedPercent) } ?? "--")
                         .font(.caption.weight(.heavy))
                         .foregroundStyle(window == nil ? .secondary : Color.tokenInk.opacity(0.82))
                         .monospacedDigit()
@@ -170,7 +170,7 @@ struct TodayView: View {
                         if let window {
                             Capsule()
                                 .fill(Color.tokenGreen)
-                                .frame(width: max(5, proxy.size.width * window.remainingPercent / 100))
+                                .frame(width: max(5, proxy.size.width * window.usedPercent / 100))
                         }
                     }
                 }

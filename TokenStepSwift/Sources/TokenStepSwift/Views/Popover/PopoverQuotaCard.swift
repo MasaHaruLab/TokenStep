@@ -10,7 +10,7 @@ struct PopoverQuotaCard: View {
                     Circle()
                         .fill(Color.tokenGreen)
                         .frame(width: 8, height: 8)
-                    Text(L("Agent 剩余额度"))
+                    Text(L("已用额度"))
                         .font(.callout.weight(.heavy))
                         .foregroundStyle(Color.tokenInk)
                     Spacer()
@@ -82,7 +82,7 @@ struct PopoverQuotaCard: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
-                    Text(window.map { LFormat("剩余 %@", TokenStepFormat.percent($0.remainingPercent)) } ?? L("等待同步"))
+                    Text(window.map { LFormat("已用 %@", TokenStepFormat.percent($0.usedPercent)) } ?? L("等待同步"))
                         .font(.caption.weight(.heavy))
                         .foregroundStyle(window == nil ? .secondary : Color.tokenInk.opacity(0.82))
                     Spacer()
@@ -97,7 +97,7 @@ struct PopoverQuotaCard: View {
                         if let window {
                             Capsule()
                                 .fill(Color.tokenGreen)
-                                .frame(width: max(5, proxy.size.width * window.remainingPercent / 100))
+                                .frame(width: max(5, proxy.size.width * min(window.usedPercent, 100) / 100))
                         }
                     }
                 }
