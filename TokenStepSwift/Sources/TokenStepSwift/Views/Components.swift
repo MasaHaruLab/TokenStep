@@ -648,6 +648,8 @@ func tokenToolColor(_ tool: String) -> Color {
         return .tokenGreen
     case "Claude Code":
         return Color(red: 0.88, green: 0.42, blue: 0.24)
+    case "Claude Cowork":
+        return Color(red: 0.96, green: 0.55, blue: 0.35)
     case "Hermes", "Hermes Agent":
         return Color(red: 0.50, green: 0.28, blue: 0.92)
     default:
@@ -671,7 +673,7 @@ func modelDisplayName(_ model: String) -> String {
 }
 
 func orderedToolEntries(_ tools: [String: Int]) -> [(name: String, tokens: Int)] {
-    let preferred = ["Codex", "Claude Code", "Hermes", "Hermes Agent"]
+    let preferred = ["Codex", "Claude Code", "Claude Cowork", "Hermes", "Hermes Agent"]
     var entries: [(name: String, tokens: Int)] = preferred.compactMap { name in
         guard let value = tools[name], value > 0 else { return nil }
         return (name, value)
@@ -683,7 +685,7 @@ func orderedToolEntries(_ tools: [String: Int]) -> [(name: String, tokens: Int)]
     return entries
 }
 
-func uniqueToolNames(in rows: [DailyUsage], fallback: [String] = ["Codex", "Claude Code"], limit: Int = 4) -> [String] {
+func uniqueToolNames(in rows: [DailyUsage], fallback: [String] = ["Codex", "Claude Code", "Claude Cowork"], limit: Int = 4) -> [String] {
     var seen = Set<String>()
     var names: [String] = []
     for day in rows {

@@ -4,6 +4,7 @@ enum UsageCollector {
     private static let timezone = TimeZone(identifier: "Asia/Shanghai") ?? .current
     private static let maxRelevantLineBytes = 1_048_576
     private static let ccSwitchSourceName = "CC Switch Proxy"
+    private static let claudeCoworkSourceName = "Claude Cowork"
 
     static func collect(
         historyDays: Int = TokenStepSettings.defaults.historyDays,
@@ -15,13 +16,14 @@ enum UsageCollector {
         let sourceCutoff = sourceFileCutoffDate(historyDays: historyDays)
         let codex = collectCodex(cache: &cache, livePaths: &livePaths, modifiedSince: sourceCutoff)
         let claude = collectClaudeCode(cache: &cache, livePaths: &livePaths, modifiedSince: sourceCutoff)
+        let cowork = collectClaudeCowork(cache: &cache, livePaths: &livePaths, modifiedSince: sourceCutoff)
         var ccSwitch = includeCCSwitchProxyUsage
             ? collectCCSwitchProxyUsage(databaseURL: ccSwitchDatabaseURL)
             : CollectorResult(records: [], source: SourceInfo(status: "disabled", files: nil, records: 0))
         cache.files = cache.files.filter { livePaths.contains($0.key) }
         saveCache(cache)
 
-        let nativeRecords = codex.records + claude.records
+        let nativeRecords = codex.records + claude.records + cowork.records
         let deduped = deduplicateCrossSource(
             nativeRecords: nativeRecords,
             proxyRecords: ccSwitch.records
@@ -34,6 +36,7 @@ enum UsageCollector {
             sources: [
                 "Codex": codex.source,
                 "Claude Code": claude.source,
+                claudeCoworkSourceName: cowork.source,
                 ccSwitchSourceName: ccSwitch.source
             ]
         )
@@ -273,7 +276,8 @@ enum UsageCollector {
         livePaths: inout Set<String>,
         rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects", isDirectory: true),
-        modifiedSince cutoffDate: Date?
+        modifiedSince cutoffDate: Date?,
+        toolName: String = "Claude Code"
     ) -> CollectorResult {
         let root = rootURL
         let paths = jsonlFiles(under: root, modifiedSince: cutoffDate)
@@ -281,7 +285,7 @@ enum UsageCollector {
 
         for path in paths.sorted(by: { $0.path < $1.path }) {
             livePaths.insert(path.path)
-            if let cached = cachedRecords(for: path, tool: "Claude Code", cache: cache) {
+            if let cached = cachedRecords(for: path, tool: toolName, cache: cache) {
                 records.append(contentsOf: cached)
                 continue
             }
@@ -321,7 +325,8 @@ enum UsageCollector {
                         requestID: identity.requestID,
                         responseID: identity.responseID,
                         sessionID: identity.sessionID,
-                        sourcePath: path.path
+                        sourcePath: path.path,
+                        toolName: toolName
                     )
                     if let existing = responses[identity.deduplicationKey],
                        !candidate.isPreferred(over: existing) {
@@ -332,7 +337,7 @@ enum UsageCollector {
             }
             fileRecords = responses.values.map(\.record)
             records.append(contentsOf: fileRecords)
-            updateCache(path: path, tool: "Claude Code", records: fileRecords, cache: &cache)
+            updateCache(path: path, tool: toolName, records: fileRecords, cache: &cache)
         }
 
         return CollectorResult(
@@ -341,6 +346,65 @@ enum UsageCollector {
                 status: records.isEmpty ? "missing" : "ok",
                 files: paths.count,
                 records: records.count
+            )
+        )
+    }
+
+    private static func collectClaudeCowork(
+        cache: inout CollectorCache,
+        livePaths: inout Set<String>,
+        modifiedSince cutoffDate: Date?
+    ) -> CollectorResult {
+        let coworkRoot = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Claude/local-agent-mode-sessions",
+                                    isDirectory: true)
+        guard FileManager.default.fileExists(atPath: coworkRoot.path) else {
+            return CollectorResult(records: [], source: SourceInfo(status: "missing", files: 0, records: 0))
+        }
+
+        // Find all .claude/projects/ directories under local-agent-mode-sessions
+        guard let enumerator = FileManager.default.enumerator(
+            at: coworkRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsPackageDescendants]
+        ) else {
+            return CollectorResult(records: [], source: SourceInfo(status: "unreadable", files: 0, records: 0))
+        }
+
+        var projectDirs = Set<String>()
+        for case let url as URL in enumerator {
+            guard url.lastPathComponent == "projects",
+                  url.path.contains(".claude/projects"),
+                  let isDir = try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory,
+                  isDir
+            else { continue }
+            projectDirs.insert(url.path)
+        }
+
+        guard !projectDirs.isEmpty else {
+            return CollectorResult(records: [], source: SourceInfo(status: "missing", files: 0, records: 0))
+        }
+
+        var allRecords: [UsageRecord] = []
+        var totalFiles = 0
+        for dir in projectDirs.sorted() {
+            let result = collectClaudeCode(
+                cache: &cache,
+                livePaths: &livePaths,
+                rootURL: URL(fileURLWithPath: dir),
+                modifiedSince: cutoffDate,
+                toolName: claudeCoworkSourceName
+            )
+            allRecords.append(contentsOf: result.records)
+            totalFiles += result.source.files ?? 0
+        }
+
+        return CollectorResult(
+            records: allRecords,
+            source: SourceInfo(
+                status: allRecords.isEmpty ? "ok_empty" : "ok",
+                files: totalFiles,
+                records: allRecords.count
             )
         )
     }
@@ -1251,12 +1315,13 @@ private struct ClaudeUsageCandidate {
     var responseID: String?
     var sessionID: String?
     var sourcePath: String
+    var toolName: String
 
     var record: UsageRecord {
         UsageRecord(
             date: date,
             timestamp: timestamp,
-            tool: "Claude Code",
+            tool: toolName,
             model: model,
             usage: usage,
             source: .nativeClaudeCode,

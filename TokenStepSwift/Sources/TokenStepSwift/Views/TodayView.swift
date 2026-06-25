@@ -103,7 +103,7 @@ struct TodayView: View {
     private var todayToolRows: [TodayBreakdownRow] {
         let total = appState.today.totalTokens
         guard total > 0 else { return [] }
-        let primaryTools = ["Codex", "Claude Code"]
+        let primaryTools = ["Codex", "Claude Code", "Claude Cowork"]
         let primaryRows = primaryTools.map { name in
             TodayBreakdownRow(
                 name: name,
