@@ -83,9 +83,9 @@ struct TodayView: View {
 
     private var metricStrip: some View {
         HStack(spacing: 18) {
-            CompactMetricCard(label: L("累计 Token"), value: TokenStepFormat.tokens(appState.snapshot.totals.tokens), detail: L("所有客户端总计"))
-            CompactMetricCard(label: L("活跃天数"), value: localizedDays(appState.snapshot.totals.activeDays), detail: String(format: L("%%d 天有 AI 使用"), appState.snapshot.totals.activeDays))
-            CompactMetricCard(label: L("达标天数"), value: localizedDays(appState.goalDays), detail: String(format: L("%%d 天超过每日目标"), appState.goalDays))
+            CompactMetricCard(label: L("累计用量"), value: TokenStepFormat.tokens(appState.snapshot.totals.tokens), detail: L("所有客户端总计"))
+            CompactMetricCard(label: L("活跃天数"), value: localizedDays(appState.snapshot.totals.activeDays), detail: L("有 AI 使用的日期"))
+            CompactMetricCard(label: L("达标天数"), value: localizedDays(appState.goalDays), detail: L("超过每日目标"))
         }
     }
 
@@ -154,18 +154,18 @@ private struct CompactMetricCard: View {
 
     var body: some View {
         TokenCard {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text(label)
-                    .font(.callout.weight(.bold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 16, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Color.tokenInk.opacity(0.8))
                 Text(value)
-                    .font(.system(size: 27, weight: .heavy, design: .rounded))
+                    .font(.system(size: 32, weight: .heavy, design: .rounded))
                     .foregroundStyle(Color.tokenInk)
-                    .minimumScaleFactor(0.66)
+                    .minimumScaleFactor(0.62)
                     .lineLimit(1)
                 Text(detail)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.tokenGreenDark)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
