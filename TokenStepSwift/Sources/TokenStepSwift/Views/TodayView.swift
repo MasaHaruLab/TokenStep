@@ -158,10 +158,16 @@ struct TodayView: View {
                         .font(.caption.weight(.heavy))
                         .foregroundStyle(window == nil ? .secondary : Color.tokenInk.opacity(0.82))
                         .monospacedDigit()
+                    if window != nil {
+                        Text("·")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                        Text(quotaRemainingText(window?.resetsAt))
+                            .font(.caption.weight(.heavy))
+                            .foregroundStyle(Color.tokenGreenDark)
+                            .monospacedDigit()
+                    }
                     Spacer()
-                    Text(quotaResetText(window?.resetsAt))
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.secondary)
                 }
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
@@ -177,6 +183,24 @@ struct TodayView: View {
                 .frame(height: 6)
             }
         }
+    }
+
+    private func quotaRemainingText(_ date: Date?) -> String {
+        guard let date else { return "" }
+        let seconds = max(0, Int(date.timeIntervalSinceNow.rounded()))
+        if seconds < 60 { return L("剩余 <1分") }
+        if seconds < 3_600 {
+            return String(format: L("剩余 %d分"), max(1, seconds / 60))
+        }
+        let h = seconds / 3_600
+        let m = (seconds % 3_600) / 60
+        if h < 24 {
+            return m > 0
+                ? String(format: L("剩余 %dh %dm"), h, m)
+                : String(format: L("剩余 %dh"), h)
+        }
+        let d = max(1, Int(ceil(Double(seconds) / 86_400)))
+        return String(format: L("剩余 %d天"), d)
     }
 
     private func quotaResetText(_ date: Date?) -> String {
