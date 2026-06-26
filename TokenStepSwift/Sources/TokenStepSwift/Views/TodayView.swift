@@ -7,6 +7,7 @@ struct TodayView: View {
         VStack(spacing: 22) {
             hero
             todayBreakdownStrip
+            recent14DayBars
             metricStrip
             if appState.settings.showCodexQuota, appState.hasAnyQuota {
                 quotaCard
@@ -96,6 +97,31 @@ struct TodayView: View {
         HStack(alignment: .top, spacing: 22) {
             TodayBreakdownCard(title: L("今日客户端"), rows: todayToolRows, maxRows: 3)
             TodayBreakdownCard(title: L("今日模型"), rows: todayModelRows, maxRows: 4)
+        }
+    }
+
+    private var recent14DayBars: some View {
+        TokenCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(L("过去 14 天"))
+                        .font(.title3.weight(.heavy))
+                        .foregroundStyle(Color.tokenInk)
+                    Spacer()
+                    Text(LFormat("日均 %@", TokenStepFormat.tokens(appState.monthAverage, compact: true)))
+                        .font(.callout.weight(.bold))
+                        .foregroundStyle(Color.tokenGreenDark)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.tokenMint.opacity(0.22), in: Capsule())
+                }
+                StackedActivityBarsView(
+                    rows: appState.snapshot.daily,
+                    goal: appState.settings.dailyGoalTokens,
+                    maxCount: 14
+                )
+                .frame(height: 72)
+            }
         }
     }
 
