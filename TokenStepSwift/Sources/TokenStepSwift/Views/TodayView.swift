@@ -2,12 +2,44 @@ import SwiftUI
 
 struct TodayView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var selectedDateOffset: Int = 0
+
+    private let maxHistoryDays = 14
+
+    private var availableDates: [String] {
+        Array(appState.snapshot.daily.map(\.date).suffix(maxHistoryDays))
+    }
+
+    private var selectedDay: DailyUsage {
+        guard let index = availableDateIndex else { return appState.today }
+        let date = availableDates[index]
+        return appState.snapshot.daily.first { $0.date == date }
+            ?? DailyUsage(date: date, tools: [:], models: [:], totalTokens: 0, cost: 0)
+    }
+
+    private var availableDateIndex: Int? {
+        guard !availableDates.isEmpty else { return nil }
+        let todayKey = DateFormatter.tokenStepDay.string(from: Date())
+        let todayIdx = availableDates.lastIndex(of: todayKey) ?? (availableDates.count - 1)
+        let idx = todayIdx + selectedDateOffset
+        guard idx >= 0, idx < availableDates.count else { return nil }
+        return idx
+    }
+
+    private var isToday: Bool {
+        let key = DateFormatter.tokenStepDay.string(from: Date())
+        return selectedDay.date == key
+    }
+
+    private var selectedLap: TokenStepLapProgress {
+        TokenStepLapProgress(tokens: selectedDay.totalTokens, goal: appState.settings.dailyGoalTokens)
+    }
 
     var body: some View {
         VStack(spacing: 22) {
+            dateSelector
             hero
             todayBreakdownStrip
-            recent14DayBars
             metricStrip
             if appState.settings.showCodexQuota, appState.hasAnyQuota {
                 quotaCard
@@ -15,14 +47,66 @@ struct TodayView: View {
         }
     }
 
+    // MARK: - Date selector
+
+    private var dateSelector: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(availableDates.enumerated()), id: \.element) { index, date in
+                    let isSelected = availableDateIndex == index
+                    Button {
+                        let todayIdx = availableDates.lastIndex(of: DateFormatter.tokenStepDay.string(from: Date())) ?? (availableDates.count - 1)
+                        selectedDateOffset = index - todayIdx
+                    } label: {
+                        VStack(spacing: 4) {
+                            Text(dateDisplayText(date))
+                                .font(.caption.weight(.heavy))
+                                .foregroundStyle(isSelected ? .white : Color.tokenInk.opacity(0.62))
+                            if isSelected {
+                                Circle()
+                                    .fill(.white)
+                                    .frame(width: 4, height: 4)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            isSelected ? appState.todayLap.color : Color.tokenSurface,
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(isSelected ? Color.clear : Color.black.opacity(0.06))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+    }
+
+    private func dateDisplayText(_ date: String) -> String {
+        let todayKey = DateFormatter.tokenStepDay.string(from: Date())
+        if date == todayKey { return L("今天") }
+        // Show M-DD format
+        let parts = date.split(separator: "-")
+        if parts.count == 3 {
+            return "\(parts[1])-\(parts[2])"
+        }
+        return date
+    }
+
+    // MARK: - Hero
+
     private var hero: some View {
-        let lap = appState.todayLap
+        let lap = selectedLap
         return TokenCard {
             HStack(alignment: .center, spacing: 34) {
                 ZStack {
                     ProgressRingView(progress: lap.currentLapProgress, lineWidth: 20, color: lap.color)
                     VStack(spacing: 6) {
-                        Text(TokenStepFormat.tokens(appState.today.totalTokens))
+                        Text(TokenStepFormat.tokens(selectedDay.totalTokens))
                             .font(.system(size: 42, weight: .heavy, design: .rounded))
                             .foregroundStyle(Color.tokenInk)
                             .minimumScaleFactor(0.42)
@@ -57,33 +141,46 @@ struct TodayView: View {
                     }
 
                     HStack(spacing: 10) {
-                        MetricPill(label: L("消耗金额"), value: TokenStepFormat.money(appState.today.cost))
-                        MetricPill(label: L("本月均值"), value: TokenStepFormat.tokens(appState.monthAverage, compact: true))
+                        MetricPill(label: L("消耗金额"), value: TokenStepFormat.money(selectedDay.cost))
+                        MetricPill(label: isToday ? L("本月均值") : L("当日占比"),
+                            value: isToday
+                                ? TokenStepFormat.tokens(appState.monthAverage, compact: true)
+                                : dailyShareText)
                     }
 
-                    Button {
-                        appState.refresh()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.caption.weight(.heavy))
-                            Text(L("刷新"))
-                                .font(.caption.weight(.bold))
+                    if isToday {
+                        Button {
+                            appState.refresh()
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.caption.weight(.heavy))
+                                Text(L("刷新"))
+                                    .font(.caption.weight(.bold))
+                            }
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
                         }
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .buttonStyle(.plain)
+                        .background(Color.tokenSurface.opacity(0.9), in: Capsule())
+                        .overlay(Capsule().stroke(Color.black.opacity(0.06)))
+                        .disabled(appState.isRefreshing)
                     }
-                    .buttonStyle(.plain)
-                    .background(Color.tokenSurface.opacity(0.9), in: Capsule())
-                    .overlay(Capsule().stroke(Color.black.opacity(0.06)))
-                    .disabled(appState.isRefreshing)
                 }
 
                 Spacer(minLength: 0)
             }
         }
     }
+
+    private var dailyShareText: String {
+        guard appState.snapshot.totals.tokens > 0, selectedDay.totalTokens > 0 else { return "--" }
+        let share = Double(selectedDay.totalTokens) / Double(appState.snapshot.totals.tokens) * 100
+        return TokenStepFormat.percent(share)
+    }
+
+    // MARK: - Metric strip
 
     private var metricStrip: some View {
         HStack(spacing: 18) {
@@ -95,33 +192,8 @@ struct TodayView: View {
 
     private var todayBreakdownStrip: some View {
         HStack(alignment: .top, spacing: 22) {
-            TodayBreakdownCard(title: L("今日客户端"), rows: todayToolRows, maxRows: 3)
-            TodayBreakdownCard(title: L("今日模型"), rows: todayModelRows, maxRows: 4)
-        }
-    }
-
-    private var recent14DayBars: some View {
-        TokenCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(L("过去 14 天"))
-                        .font(.title3.weight(.heavy))
-                        .foregroundStyle(Color.tokenInk)
-                    Spacer()
-                    Text(LFormat("日均 %@", TokenStepFormat.tokens(appState.monthAverage, compact: true)))
-                        .font(.callout.weight(.bold))
-                        .foregroundStyle(Color.tokenGreenDark)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color.tokenMint.opacity(0.22), in: Capsule())
-                }
-                StackedActivityBarsView(
-                    rows: appState.snapshot.daily,
-                    goal: appState.settings.dailyGoalTokens,
-                    maxCount: 14
-                )
-                .frame(height: 72)
-            }
+            TodayBreakdownCard(title: isToday ? L("今日客户端") : L("当日客户端"), rows: todayToolRows, maxRows: 3)
+            TodayBreakdownCard(title: isToday ? L("今日模型") : L("当日模型"), rows: todayModelRows, maxRows: 4)
         }
     }
 
@@ -129,6 +201,7 @@ struct TodayView: View {
         TokenStepLocalization.language == .en ? "\(count)d" : "\(count) 天"
     }
 
+    // ... (quota card unchanged, same as before)
     private var quotaCard: some View {
         TokenCard {
             VStack(alignment: .leading, spacing: 14) {
@@ -242,19 +315,21 @@ struct TodayView: View {
         return String(format: L("%%d 天后重置"), max(1, Int(ceil(Double(seconds) / 86_400))))
     }
 
+    // MARK: - Breakdown rows
+
     private var todayToolRows: [TodayBreakdownRow] {
-        let total = appState.today.totalTokens
+        let total = selectedDay.totalTokens
         guard total > 0 else { return [] }
         let primaryTools = ["Codex", "Claude Code", "Claude Cowork"]
         let primaryRows = primaryTools.map { name in
             TodayBreakdownRow(
                 name: name,
-                tokens: appState.today.tools[name] ?? 0,
-                percent: Double(appState.today.tools[name] ?? 0) * 100 / Double(total),
+                tokens: selectedDay.tools[name] ?? 0,
+                percent: Double(selectedDay.tools[name] ?? 0) * 100 / Double(total),
                 color: tokenToolColor(name)
             )
         }
-        let extraRows = appState.today.tools
+        let extraRows = selectedDay.tools
             .filter { !primaryTools.contains($0.key) && $0.value > 0 }
             .sorted { $0.value > $1.value }
             .map { name, tokens in
@@ -269,11 +344,11 @@ struct TodayView: View {
     }
 
     private var todayModelRows: [TodayBreakdownRow] {
-        breakdownRows(from: appState.today.models) { _ in nil }
+        breakdownRows(from: selectedDay.models) { _ in nil }
     }
 
     private func breakdownRows(from values: [String: Int], color: (String) -> Color?) -> [TodayBreakdownRow] {
-        let total = appState.today.totalTokens
+        let total = selectedDay.totalTokens
         guard total > 0 else { return [] }
         return values
             .filter { $0.value > 0 }
