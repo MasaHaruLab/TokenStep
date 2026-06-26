@@ -192,9 +192,9 @@ struct TodayView: View {
 
     private var todayBreakdownStrip: some View {
         let prefix = isToday ? L("今日") : dateDisplayText(selectedDay.date)
-        HStack(alignment: .top, spacing: 22) {
-            TodayBreakdownCard(title: String(format: L("%%@ 客户端"), prefix), rows: todayToolRows, maxRows: 3)
-            TodayBreakdownCard(title: String(format: L("%%@ 模型"), prefix), rows: todayModelRows, maxRows: 4)
+        return HStack(alignment: .top, spacing: 22) {
+            TodayBreakdownCard(title: String(format: "%@ 客户端", prefix), rows: todayToolRows, maxRows: 3)
+            TodayBreakdownCard(title: String(format: "%@ 模型", prefix), rows: todayModelRows, maxRows: 4)
         }
     }
 
