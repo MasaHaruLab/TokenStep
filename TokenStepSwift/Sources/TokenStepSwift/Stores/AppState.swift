@@ -127,13 +127,20 @@ final class AppState: ObservableObject {
         fileWatcher = nil
         fileWatcherDebounce?.cancel()
 
-        let path = AppPaths.usageJSON.path
-        guard FileManager.default.fileExists(atPath: path) else { return }
-
-        let fd = open(path, O_EVTONLY)
+        // Watch the parent directory instead of the file directly.
+        // Atomic writes (Data.write with .atomic) use rename(), which
+        // unlinks the old file and creates a new inode. The old fd gets
+        // a .delete event, not .write/.rename. Watching the directory
+        // catches the file replacement as a .write event on the dir.
+        let dirPath = AppPaths.usageJSON.deletingLastPathComponent().path
+        let fd = open(dirPath, O_EVTONLY)
         guard fd >= 0 else { return }
 
-        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .extend, .rename], queue: .main)
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: .write,
+            queue: .main
+        )
         source.setEventHandler { [weak self] in
             self?.fileWatcherDebounce?.cancel()
             let work = DispatchWorkItem { [weak self] in
