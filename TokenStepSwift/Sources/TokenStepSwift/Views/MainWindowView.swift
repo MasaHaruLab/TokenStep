@@ -146,8 +146,12 @@ struct MainWindowView: View {
                         }
                     }
                     detailView
+                        .id(selection)
                 }
                 .frame(maxWidth: 1160, alignment: .leading)
+                .onChange(of: selection) { _ in
+                    appState.reloadSnapshot()
+                }
 
                 Spacer(minLength: 0)
             }

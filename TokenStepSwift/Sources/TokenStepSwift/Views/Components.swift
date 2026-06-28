@@ -584,7 +584,7 @@ struct ContributionWallView: View {
         let start = calendar.date(byAdding: .day, value: -mondayOffset, to: rawStart) ?? rawStart
 
         VStack(alignment: .leading, spacing: 16) {
-            ZStack(alignment: .topTrailing) {
+            ZStack(alignment: .bottomLeading) {
                 HStack(alignment: .top, spacing: 5) {
                     ForEach(0..<weeks, id: \.self) { week in
                         VStack(spacing: 5) {
@@ -602,7 +602,9 @@ struct ContributionWallView: View {
                                     }
                                     .contentShape(Rectangle())
                                     .onHover { isHovering in
-                                        hoveredDate = isHovering ? key : (hoveredDate == key ? nil : hoveredDate)
+                                        withAnimation(.easeOut(duration: 0.12)) {
+                                            hoveredDate = isHovering ? key : nil
+                                        }
                                     }
                             }
                         }
@@ -612,23 +614,29 @@ struct ContributionWallView: View {
                 if let date = hoveredDate,
                    let usage = rowByDate[date],
                    usage.totalTokens > 0 {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(date)
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.secondary)
-                        Text(TokenStepFormat.tokens(usage.totalTokens))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(friendlyDate(date))
                             .font(.caption.weight(.heavy))
                             .foregroundStyle(Color.tokenInk)
+                        Text(TokenStepFormat.tokens(usage.totalTokens))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.tokenGreenDark)
                             .monospacedDigit()
+                        let top = usage.tools.max(by: { $0.value < $1.value })
+                        if let top = top, top.value > 0 {
+                            Text(top.key)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
                     .background(Color.tokenSurface.opacity(0.96), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.black.opacity(0.06)))
                     .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 4)
+                    .offset(y: 8)
                 }
             }
-            .animation(.easeOut(duration: 0.1), value: hoveredDate)
 
             HStack {
                 MetricPill(label: L("活跃"), value: localizedDays(rows.filter { $0.totalTokens > 0 }.count))
@@ -652,6 +660,12 @@ struct ContributionWallView: View {
 
     private func localizedDays(_ count: Int) -> String {
         TokenStepLocalization.language == .en ? "\(count)d" : "\(count) 天"
+    }
+
+    private func friendlyDate(_ raw: String) -> String {
+        let parts = raw.split(separator: "-")
+        guard parts.count == 3 else { return raw }
+        return "\(Int(parts[1])!)月\(Int(parts[2])!)日"
     }
 }
 
@@ -677,10 +691,14 @@ func tokenToolColor(_ tool: String) -> Color {
         return Color(red: 0.88, green: 0.42, blue: 0.24)
     case "Claude Cowork":
         return Color(red: 0.96, green: 0.55, blue: 0.35)
-    case "Hermes", "Hermes Agent":
-        return Color(red: 0.50, green: 0.28, blue: 0.92)
+    case "deepseek":
+        return Color(red: 0.239, green: 0.494, blue: 0.651)
+    case "minimax-cn", "minimax":
+        return Color(red: 0.96, green: 0.42, blue: 0.55)
+    case "openai-codex":
+        return .tokenGreen
     default:
-        return Color.tokenInk.opacity(0.44)
+        return Color.tokenInk.opacity(0.52)
     }
 }
 
@@ -694,13 +712,15 @@ func modelDisplayName(_ model: String) -> String {
         "claude-fable-5": "Fable 5",
         "deepseek-v4-pro": "DS V4 Pro",
         "deepseek-v4-flash": "DS V4 Flash",
+        "MiniMax-M2.7": "MiniMax 2.7",
         "gpt-5.5": "GPT-5.5",
+        "gpt-5.4": "GPT-5.4",
     ]
     return short[model] ?? model
 }
 
 func orderedToolEntries(_ tools: [String: Int]) -> [(name: String, tokens: Int)] {
-    let preferred = ["Codex", "Claude Code", "Claude Cowork", "Hermes", "Hermes Agent"]
+    let preferred = ["Codex", "Claude Code", "Claude Cowork", "deepseek", "minimax-cn"]
     var entries: [(name: String, tokens: Int)] = preferred.compactMap { name in
         guard let value = tools[name], value > 0 else { return nil }
         return (name, value)

@@ -40,7 +40,13 @@ struct TodayView: View {
             dateSelector
             hero
             todayBreakdownStrip
+            if selectedDay.totalTokens > 0 {
+                todayAdviceCard
+            }
             metricStrip
+            if !sessionsForToday.isEmpty {
+                sessionHealthCard
+            }
             if appState.settings.showCodexQuota, appState.hasAnyQuota {
                 quotaCard
             }
@@ -128,20 +134,14 @@ struct TodayView: View {
                         Text(lap.completedTokensText)
                             .font(.title3.weight(.bold))
                             .foregroundStyle(.secondary)
-                        Text(lap.perLapGoalText)
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(.secondary)
                     }
 
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(L("圈数进度"))
-                            .font(.headline.weight(.heavy))
-                            .foregroundStyle(Color.tokenInk)
-                        LapProgressChips(lap: lap)
-                    }
+                    LapProgressChips(lap: lap)
+
+                    coldWarmIndicator
 
                     HStack(spacing: 10) {
-                        MetricPill(label: L("消耗金额"), value: TokenStepFormat.money(selectedDay.cost))
+                        MetricPill(label: isToday ? L("今日消耗") : L("消耗金额"), value: TokenStepFormat.money(selectedDay.cost))
                         MetricPill(label: isToday ? L("本月均值") : L("当日占比"),
                             value: isToday
                                 ? TokenStepFormat.tokens(appState.monthAverage, compact: true)
@@ -180,6 +180,282 @@ struct TodayView: View {
         return TokenStepFormat.percent(share)
     }
 
+    // MARK: - Cold / Warm
+
+    private var coldWarmIndicator: some View {
+        let hasData = selectedDay.coldTokens > 0 || selectedDay.warmTokens > 0
+        guard hasData else { return AnyView(EmptyView()) }
+
+        let pct = selectedDay.warmPercent
+        let color: Color = {
+            if pct < 10 { return Color.red.opacity(0.7) }
+            if pct < 30 { return Color.orange }
+            if pct < 50 { return Color.yellow }
+            return Color.tokenGreenDark
+        }()
+
+        return AnyView(
+            HStack(spacing: 6) {
+                HStack(spacing: 3) {
+                    Circle().fill(Color.tokenInk.opacity(0.35)).frame(width: 5, height: 5)
+                    Text(L("冷"))
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Text(TokenStepFormat.tokens(selectedDay.coldTokens, compact: true))
+                        .font(.caption2.weight(.heavy))
+                        .foregroundStyle(Color.tokenInk.opacity(0.62))
+                }
+                Text("·")
+                    .font(.caption2.weight(.heavy))
+                    .foregroundStyle(.tertiary)
+                HStack(spacing: 3) {
+                    Circle().fill(color).frame(width: 5, height: 5)
+                    Text(L("热"))
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Text(TokenStepFormat.tokens(selectedDay.warmTokens, compact: true))
+                        .font(.caption2.weight(.heavy))
+                        .foregroundStyle(color)
+                }
+                if selectedDay.warmTokens > 0 {
+                    Text(String(format: "%.0f%%", pct))
+                        .font(.caption2.weight(.heavy))
+                        .foregroundStyle(color)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(color.opacity(0.12), in: Capsule())
+                }
+            }
+        )
+    }
+
+    private var todayAdviceCard: some View {
+        let pct = selectedDay.warmPercent
+        let advice = todayAdvice(warmPercent: pct)
+
+        return TokenCard {
+            HStack(spacing: 12) {
+                Image(systemName: advice.icon)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(advice.color)
+                    .frame(width: 28, height: 28)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(advice.title)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Color.tokenInk)
+                    if !advice.tip.isEmpty {
+                        Text(advice.tip)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(String(format: "%.0f%%", pct))
+                        .font(.title3.weight(.heavy))
+                        .foregroundStyle(advice.color)
+                    Text(L("缓存命中"))
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    private func todayAdvice(warmPercent: Double) -> (icon: String, title: String, tip: String, color: Color) {
+        if selectedDay.totalTokens == 0 {
+            return ("questionmark.circle", L("暂无数据"), "", .secondary)
+        }
+        if warmPercent < 5 {
+            return (
+                "thermometer.snowflake",
+                L("几乎没用上缓存"),
+                L("把相关任务放在同一个长会话里，别每次都开新窗口"),
+                Color.red.opacity(0.72)
+            )
+        }
+        if warmPercent < 25 {
+            return (
+                "thermometer.low",
+                L("缓存偏少"),
+                L("试试用同一个会话连续提问，而不是每次都新建"),
+                Color.orange
+            )
+        }
+        if warmPercent < 50 {
+            return (
+                "thermometer.medium",
+                L("缓存效率不错"),
+                L("继续维持长会话习惯就行"),
+                Color.yellow
+            )
+        }
+        return (
+            "flame.fill",
+            L("缓存效率很高"),
+            L("长会话用得好，大部分上下文都被复用了"),
+            Color.tokenGreenDark
+        )
+    }
+
+    // MARK: - Session health
+
+    private var sessionsForToday: [SessionSummary] {
+        appState.snapshot.sessions.filter { $0.date == selectedDay.date }
+    }
+
+    private var sessionHealthCard: some View {
+        let coldStarts = sessionsForToday.filter(\.isColdStart).sorted { $0.totalTokens > $1.totalTokens }.prefix(5)
+        let bloated = sessionsForToday.filter(\.isBloated).sorted { $0.totalTokens > $1.totalTokens }.prefix(5)
+        let healthy = sessionsForToday.filter(\.isHealthy).sorted { $0.warmPercent > $1.warmPercent }.prefix(3)
+
+        let coldTotal = coldStarts.map(\.totalTokens).reduce(0, +)
+        let bloatedTotal = bloated.map(\.totalTokens).reduce(0, +)
+        let wastedTokens = coldTotal + bloatedTotal
+
+        return TokenCard {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(L("会话健康"))
+                            .font(.headline.weight(.heavy))
+                            .foregroundStyle(Color.tokenInk)
+                        if wastedTokens > 0 {
+                            Text(LFormat("⚠️ 今天可能浪费了 %@ token", TokenStepFormat.tokens(wastedTokens, compact: true)))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color.orange.opacity(0.85))
+                        }
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text("\(sessionsForToday.count)")
+                            .font(.title2.weight(.heavy))
+                            .foregroundStyle(Color.tokenGreenDark)
+                        Text(L("个会话"))
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if !coldStarts.isEmpty {
+                    sessionSection(
+                        icon: "snowflake",
+                        title: L("冷启动会话"),
+                        subtitle: L("每次开新会话都要从头加载上下文"),
+                        color: Color.red.opacity(0.72),
+                        total: coldTotal,
+                        sessions: Array(coldStarts)
+                    )
+                }
+
+                if !bloated.isEmpty {
+                    sessionSection(
+                        icon: "exclamationmark.triangle.fill",
+                        title: L("效率偏低"),
+                        subtitle: L("token 量大但缓存利用不够——合并在一个会话里试试"),
+                        color: Color.orange,
+                        total: bloatedTotal,
+                        sessions: Array(bloated)
+                    )
+                }
+
+                if !healthy.isEmpty {
+                    sessionSection(
+                        icon: "leaf.fill",
+                        title: L("健康会话"),
+                        subtitle: L("缓存命中率高，保持这个习惯"),
+                        color: Color.tokenGreenDark,
+                        total: healthy.map(\.totalTokens).reduce(0, +),
+                        sessions: Array(healthy)
+                    )
+                }
+            }
+        }
+    }
+
+    private func sessionSection(icon: String, title: String, subtitle: String, color: Color, total: Int, sessions: [SessionSummary]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(Color.tokenInk.opacity(0.8))
+                Text("·")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Text(subtitle)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+                Text(TokenStepFormat.tokens(total, compact: true))
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(color)
+            }
+
+            ForEach(sessions.prefix(5), id: \.sessionID) { session in
+                sessionRow(session: session)
+            }
+        }
+        .padding(12)
+        .background(color.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func sessionRow(session: SessionSummary) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(sessionLabelColor(session))
+                .frame(width: 6, height: 6)
+            Text(session.tool)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.tokenInk.opacity(0.62))
+                .lineLimit(1)
+                .frame(width: 80, alignment: .leading)
+            Text(TokenStepFormat.tokens(session.totalTokens, compact: true))
+                .font(.caption.weight(.heavy))
+                .foregroundStyle(Color.tokenInk)
+                .monospacedDigit()
+            Spacer()
+            HStack(spacing: 4) {
+                Text(String(format: "冷 %.0f%%", 100 - session.warmPercent))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color.tokenInk.opacity(0.5))
+                Text(String(format: "热 %.0f%%", session.warmPercent))
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(session.warmPercent > 50 ? Color.tokenGreenDark : Color.orange)
+            }
+            Text(L(session.label))
+                .font(.caption2.weight(.heavy))
+                .foregroundStyle(sessionLabelColor(session))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(sessionLabelColor(session).opacity(0.12), in: Capsule())
+        }
+    }
+
+    private func sessionLabelColor(_ session: SessionSummary) -> Color {
+        if session.isColdStart { return Color.red.opacity(0.72) }
+        if session.isBloated { return Color.orange }
+        if session.isHealthy { return Color.tokenGreenDark }
+        return Color.secondary
+    }
+
+    private func modelColor(_ modelName: String) -> Color {
+        let lower = modelName.lowercased()
+        if lower.contains("deepseek") { return tokenToolColor("deepseek") }
+        if lower.contains("minimax") { return tokenToolColor("minimax-cn") }
+        if lower.contains("claude") || lower.contains("opus") || lower.contains("sonnet") || lower.contains("haiku") { return tokenToolColor("Claude Code") }
+        if lower.contains("gpt") { return tokenToolColor("Codex") }
+        return Color.tokenInk.opacity(0.52)
+    }
+
     // MARK: - Metric strip
 
     private var metricStrip: some View {
@@ -191,10 +467,10 @@ struct TodayView: View {
     }
 
     private var todayBreakdownStrip: some View {
-        let prefix = isToday ? L("今日") : dateDisplayText(selectedDay.date)
+        let dateLabel = isToday ? L("今日") : dateDisplayText(selectedDay.date)
         return HStack(alignment: .top, spacing: 22) {
-            TodayBreakdownCard(title: String(format: "%@ 客户端", prefix), rows: todayToolRows, maxRows: 3)
-            TodayBreakdownCard(title: String(format: "%@ 模型", prefix), rows: todayModelRows, maxRows: 4)
+            TodayBreakdownCard(title: L("客户端"), dateLabel: dateLabel, rows: todayToolRows, maxRows: 3)
+            TodayBreakdownCard(title: L("模型"), dateLabel: dateLabel, rows: todayModelRows, maxRows: 4)
         }
     }
 
@@ -210,7 +486,7 @@ struct TodayView: View {
                     Circle()
                         .fill(Color.tokenGreen)
                         .frame(width: 8, height: 8)
-                    Text(L("已用额度"))
+                    Text(isToday ? L("今日已用额度") : L("已用额度"))
                         .font(.headline.weight(.heavy))
                         .foregroundStyle(Color.tokenInk)
                     Spacer()
@@ -229,6 +505,31 @@ struct TodayView: View {
                     }
                     if appState.codexQuota.isAvailable {
                         quotaColumn(title: "Codex", quota: appState.codexQuota)
+                    }
+                }
+
+                if isToday, !todayModelRows.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L("今日模型用量"))
+                            .font(.caption.weight(.heavy))
+                            .foregroundStyle(Color.tokenInk.opacity(0.62))
+                            .padding(.top, 4)
+                        ForEach(todayModelRows.prefix(4), id: \.name) { row in
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(row.color ?? Color.tokenGreen)
+                                    .frame(width: 7, height: 7)
+                                Text(modelDisplayName(row.name))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Color.tokenInk.opacity(0.72))
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(TokenStepFormat.tokens(row.tokens, compact: true))
+                                    .font(.caption.weight(.heavy))
+                                    .foregroundStyle(Color.tokenInk.opacity(0.62))
+                                    .monospacedDigit()
+                            }
+                        }
                     }
                 }
             }
@@ -321,7 +622,7 @@ struct TodayView: View {
     private var todayToolRows: [TodayBreakdownRow] {
         let total = selectedDay.totalTokens
         guard total > 0 else { return [] }
-        let primaryTools = ["Codex", "Claude Code", "Claude Cowork"]
+        let primaryTools = ["Codex", "Claude Code", "Claude Cowork", "deepseek", "minimax-cn"]
         let primaryRows = primaryTools.map { name in
             TodayBreakdownRow(
                 name: name,
@@ -345,7 +646,7 @@ struct TodayView: View {
     }
 
     private var todayModelRows: [TodayBreakdownRow] {
-        breakdownRows(from: selectedDay.models) { _ in nil }
+        breakdownRows(from: selectedDay.models) { modelColor($0) }
     }
 
     private func breakdownRows(from values: [String: Int], color: (String) -> Color?) -> [TodayBreakdownRow] {

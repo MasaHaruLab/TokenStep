@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TodayBreakdownCard: View {
     var title: String
+    var dateLabel: String
     var rows: [TodayBreakdownRow]
     var maxRows: Int = 4
 
@@ -13,7 +14,7 @@ struct TodayBreakdownCard: View {
                         .font(.title3.weight(.heavy))
                         .foregroundStyle(Color.tokenInk)
                     Spacer()
-                    Text(L("今日"))
+                    Text(dateLabel)
                         .font(.caption.weight(.bold))
                         .foregroundStyle(Color.tokenGreenDark)
                         .padding(.horizontal, 10)

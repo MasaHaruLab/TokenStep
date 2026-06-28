@@ -22,6 +22,7 @@ struct StatsView: View {
                 })
             }
         }
+
     }
 
     private var recentActivityCard: some View {

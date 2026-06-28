@@ -30,13 +30,14 @@ enum TokenStepFormat {
         return "\(value)"
     }
 
-    static func money(_ value: Double) -> String {
+    /// Formats NZD cost for display. All internal costs are already in NZD.
+    static func money(_ nzdValue: Double) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
-        formatter.currencyCode = "USD"
-        formatter.currencySymbol = "$"
+        formatter.currencyCode = "NZD"
+        formatter.currencySymbol = "NZ$"
         formatter.maximumFractionDigits = 2
-        return formatter.string(from: NSNumber(value: value)) ?? "$0.00"
+        return formatter.string(from: NSNumber(value: nzdValue)) ?? "NZ$0.00"
     }
 
     static func percent(_ value: Double) -> String {

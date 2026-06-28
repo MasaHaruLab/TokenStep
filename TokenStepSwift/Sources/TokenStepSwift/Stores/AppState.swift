@@ -24,6 +24,8 @@ final class AppState: ObservableObject {
     @Published var lastError: String?
 
     private var timer: Timer?
+    private var fileWatcher: DispatchSourceFileSystemObject?
+    private var fileWatcherDebounce: DispatchWorkItem?
 
     init() {
         load()
@@ -32,10 +34,6 @@ final class AppState: ObservableObject {
         refreshCodexQuota()
         refreshIfSnapshotIsStale()
         scheduleDeferredUpdateCheck()
-    }
-
-    deinit {
-        timer?.invalidate()
     }
 
     var today: DailyUsage {
@@ -96,6 +94,12 @@ final class AppState: ObservableObject {
         return TokenIslandDisplayDetector.fallbackReason
     }
 
+    deinit {
+        timer?.invalidate()
+        fileWatcher?.cancel()
+        fileWatcherDebounce?.cancel()
+    }
+
     var appearanceID: String {
         "\(settings.theme.id)-\(settings.language.resolved.id)"
     }
@@ -115,7 +119,43 @@ final class AppState: ObservableObject {
             clearTokenRankState()
         }
         autostartEnabled = AutostartService.isEnabled
+        watchUsageFile()
     }
+
+    private func watchUsageFile() {
+        fileWatcher?.cancel()
+        fileWatcher = nil
+        fileWatcherDebounce?.cancel()
+
+        let path = AppPaths.usageJSON.path
+        guard FileManager.default.fileExists(atPath: path) else { return }
+
+        let fd = open(path, O_EVTONLY)
+        guard fd >= 0 else { return }
+
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .extend, .rename], queue: .main)
+        source.setEventHandler { [weak self] in
+            self?.fileWatcherDebounce?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                if let fresh = try? DataService.loadSnapshot() {
+                    self.snapshot = fresh
+                }
+            }
+            self?.fileWatcherDebounce = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        fileWatcher = source
+    }
+
+    func reloadSnapshot() {
+        if let fresh = try? DataService.loadSnapshot() {
+            snapshot = fresh
+        }
+    }
+
 
     func refresh() {
         guard !isRefreshing else { return }

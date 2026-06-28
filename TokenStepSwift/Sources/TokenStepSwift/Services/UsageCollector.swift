@@ -5,6 +5,7 @@ enum UsageCollector {
     private static let maxRelevantLineBytes = 1_048_576
     private static let ccSwitchSourceName = "CC Switch Proxy"
     private static let claudeCoworkSourceName = "Claude Cowork"
+    private static let hermesSourceName = "Hermes"
 
     static func collect(
         historyDays: Int = TokenStepSettings.defaults.historyDays,
@@ -17,13 +18,14 @@ enum UsageCollector {
         let codex = collectCodex(cache: &cache, livePaths: &livePaths, modifiedSince: sourceCutoff)
         let claude = collectClaudeCode(cache: &cache, livePaths: &livePaths, modifiedSince: sourceCutoff)
         let cowork = collectClaudeCowork(cache: &cache, livePaths: &livePaths, modifiedSince: sourceCutoff)
+        let hermes = collectHermes()
         var ccSwitch = includeCCSwitchProxyUsage
             ? collectCCSwitchProxyUsage(databaseURL: ccSwitchDatabaseURL)
             : CollectorResult(records: [], source: SourceInfo(status: "disabled", files: nil, records: 0))
         cache.files = cache.files.filter { livePaths.contains($0.key) }
         saveCache(cache)
 
-        let nativeRecords = codex.records + claude.records + cowork.records
+        let nativeRecords = codex.records + claude.records + cowork.records + hermes.records
         let deduped = deduplicateCrossSource(
             nativeRecords: nativeRecords,
             proxyRecords: ccSwitch.records
@@ -37,6 +39,7 @@ enum UsageCollector {
                 "Codex": codex.source,
                 "Claude Code": claude.source,
                 claudeCoworkSourceName: cowork.source,
+                hermesSourceName: hermes.source,
                 ccSwitchSourceName: ccSwitch.source
             ]
         )
@@ -450,8 +453,6 @@ enum UsageCollector {
             "app_type",
             "provider_id",
             "model",
-            "request_model",
-            "pricing_model",
             "input_tokens",
             "output_tokens",
             "cache_read_tokens",
@@ -481,7 +482,7 @@ enum UsageCollector {
             data_source,
             created_at,
             app_type,
-            coalesce(nullif(pricing_model, ''), nullif(model, ''), nullif(request_model, ''), 'unknown') as display_model,
+            coalesce(nullif(model, ''), nullif(request_model, ''), 'unknown') as display_model,
             coalesce(input_tokens, 0) as input_tokens,
             coalesce(output_tokens, 0) as output_tokens,
             coalesce(cache_read_tokens, 0) as cache_read_tokens,
@@ -490,7 +491,7 @@ enum UsageCollector {
         from proxy_request_logs
         where status_code >= 200
             and status_code < 300
-            and lower(data_source) = 'proxy'
+            and lower(data_source) in ('proxy', 'session_log')
             and (
                 coalesce(input_tokens, 0)
                 + coalesce(output_tokens, 0)
@@ -545,6 +546,95 @@ enum UsageCollector {
                 records: records.count
             )
         )
+    }
+
+    // MARK: - Hermes Native Collector
+
+    private static func collectHermes() -> CollectorResult {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        var allRecords: [UsageRecord] = []
+        var dbCount = 0
+
+        // Main state.db
+        let mainDB = home.appendingPathComponent(".hermes/state.db")
+        if let records = collectHermesSessions(from: mainDB) {
+            allRecords.append(contentsOf: records)
+            dbCount += 1
+        }
+
+        // Profile DBs
+        let profilesDir = home.appendingPathComponent(".hermes/profiles")
+        if let contents = try? FileManager.default.contentsOfDirectory(at: profilesDir, includingPropertiesForKeys: nil) {
+            for dir in contents {
+                let db = dir.appendingPathComponent("state.db")
+                if let records = collectHermesSessions(from: db) {
+                    allRecords.append(contentsOf: records)
+                    dbCount += 1
+                }
+            }
+        }
+
+        return CollectorResult(
+            records: allRecords,
+            source: SourceInfo(
+                status: allRecords.isEmpty ? "no_data" : "ok",
+                files: dbCount,
+                records: allRecords.count
+            )
+        )
+    }
+
+    private static func collectHermesSessions(from database: URL) -> [UsageRecord]? {
+        guard FileManager.default.fileExists(atPath: database.path),
+              FileManager.default.isReadableFile(atPath: database.path) else {
+            return nil
+        }
+
+        let query = """
+        SELECT
+            started_at,
+            billing_provider,
+            model,
+            coalesce(input_tokens, 0) as input_tokens,
+            coalesce(output_tokens, 0) as output_tokens,
+            coalesce(cache_read_tokens, 0) as cache_read_tokens,
+            coalesce(cache_write_tokens, 0) as cache_write_tokens,
+            coalesce(reasoning_tokens, 0) as reasoning_tokens
+        FROM sessions
+        WHERE coalesce(input_tokens, 0) + coalesce(output_tokens, 0) > 0
+        ORDER BY started_at
+        """
+
+        guard let rows = sqliteJSONRows(database: database, query: query) else { return nil }
+
+        return rows.compactMap { row -> UsageRecord? in
+            guard let day = dayString(fromEpoch: row["started_at"] as Any) else { return nil }
+
+            var usage = TokenUsageCounts()
+            usage.inputTokens = integerValue(row["input_tokens"] as Any)
+            usage.outputTokens = integerValue(row["output_tokens"] as Any)
+            usage.cacheReadInputTokens = integerValue(row["cache_read_tokens"] as Any)
+            usage.cacheCreationInputTokens = integerValue(row["cache_write_tokens"] as Any)
+            usage.reasoningOutputTokens = integerValue(row["reasoning_tokens"] as Any)
+            usage.totalTokens = usage.inputTokens + usage.outputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens + usage.reasoningOutputTokens
+            guard usage.totalTokens > 0 else { return nil }
+
+            let provider = (row["billing_provider"] as? String) ?? "hermes"
+            let model = (row["model"] as? String) ?? "unknown"
+
+            return UsageRecord(
+                date: day,
+                timestamp: isoString(fromEpoch: row["started_at"] as Any),
+                tool: provider,
+                model: modelKey(model),
+                usage: usage,
+                costUSD: nil,
+                source: .nativeHermes,
+                requestID: nil,
+                sessionID: nil,
+                dataSource: "hermes_db"
+            )
+        }
     }
 
     private static func deduplicateCrossSource(
@@ -732,7 +822,8 @@ enum UsageCollector {
         var models = [ModelKey: UsageAccumulator]()
 
         for record in records {
-            let cost = record.costUSD ?? estimateCost(usage: record.usage, tool: record.tool, model: record.model)
+            let rawCost = record.costUSD ?? estimateCost(usage: record.usage, tool: record.tool, model: record.model)
+            let cost = rawCost * nzdRate
             daily[record.date, default: DailyAccumulator(date: record.date)].add(record: record, cost: cost)
             if let hour = hour(fromISO: record.timestamp) {
                 rhythms[record.date, default: RhythmAccumulator(date: record.date)]
@@ -753,6 +844,8 @@ enum UsageCollector {
                     tools: item.tools,
                     models: item.models,
                     totalTokens: item.totalTokens,
+                    coldTokens: item.coldTokens,
+                    warmTokens: item.warmTokens,
                     cost: rounded(item.cost, digits: 4)
                 )
             }
@@ -783,6 +876,29 @@ enum UsageCollector {
                 )
             }
 
+        // ── Session-level aggregation ──
+        var sessionGroups = [String: SessionAccumulator]()
+        for record in records {
+            let sid = record.sessionID ?? record.sourcePath ?? UUID().uuidString
+            sessionGroups[sid, default: SessionAccumulator(sessionID: sid)]
+                .add(record: record)
+        }
+        let sessionRows = sessionGroups.values
+            .filter { $0.totalTokens >= 10_000 }   // skip tiny / noise sessions
+            .sorted { $0.totalTokens > $1.totalTokens }
+            .map { acc in
+                SessionSummary(
+                    sessionID: acc.sessionID,
+                    tool: acc.dominantTool,
+                    model: acc.dominantModel,
+                    recordCount: acc.recordCount,
+                    totalTokens: acc.totalTokens,
+                    coldTokens: acc.coldTokens,
+                    warmTokens: acc.warmTokens,
+                    date: acc.date
+                )
+            }
+
         return UsageSnapshot(
             generatedAt: isoFormatter.string(from: Date()),
             timezone: "Asia/Shanghai",
@@ -795,6 +911,7 @@ enum UsageCollector {
             rhythms: rhythmRows,
             tools: toolRows,
             models: modelRows,
+            sessions: sessionRows,
             sources: sources
         )
     }
@@ -1161,20 +1278,41 @@ enum UsageCollector {
         return try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
     }
 
+    /// USD → NZD conversion rate. Adjustable via UserDefaults key "nzd_rate".
+    /// Default 1.7717 (June 2026 market rate). All costs are converted to NZD at aggregation.
+    private static var nzdRate: Double {
+        let stored = UserDefaults.standard.double(forKey: "nzd_rate")
+        return stored > 0 ? stored : 1.7717
+    }
+
     private static func estimateCost(usage: TokenUsageCounts, tool: String, model: String) -> Double {
         let lower = model.lowercased()
+        // ── OpenAI (Codex) ──
         if tool == "Codex", lower.contains("gpt-5.5") {
             return openAICostByParts(usage: usage, input: 5, cachedInput: 0.5, output: 30)
         }
         if tool == "Codex", lower.contains("gpt-5.4") {
             return openAICostByParts(usage: usage, input: 2.5, cachedInput: 0.25, output: 15)
         }
+        // ── Anthropic ──
         if lower.contains("opus") {
             return costByParts(usage: usage, input: 5, output: 25, cacheCreation: 6.25, cacheRead: 0.5)
         }
         if lower.contains("sonnet") {
             return costByParts(usage: usage, input: 3, output: 15, cacheCreation: 3.75, cacheRead: 0.3)
         }
+        // ── DeepSeek ──
+        if lower.contains("deepseek"), lower.contains("pro") {
+            return deepseekCost(usage: usage, input: 0.435, cacheHit: 0.003625, output: 0.87)
+        }
+        if lower.contains("deepseek"), lower.contains("flash") {
+            return deepseekCost(usage: usage, input: 0.14, cacheHit: 0.0028, output: 0.28)
+        }
+        // ── MiniMax ──
+        if lower.contains("minimax"), lower.contains("m2") {
+            return costByParts(usage: usage, input: 0.30, output: 1.20, cacheCreation: 0.375, cacheRead: 0.06)
+        }
+        // ── Generic fallbacks ──
         if tool == "Claude Code" {
             return Double(usage.totalTokens) / 1_000_000 * 3
         }
@@ -1206,6 +1344,19 @@ enum UsageCollector {
             + Double(usage.cacheCreationInputTokens) / 1_000_000 * cacheCreation
             + Double(usage.cacheReadInputTokens) / 1_000_000 * cacheRead
             + Double(usage.reasoningOutputTokens) / 1_000_000 * output
+    }
+
+    private static func deepseekCost(
+        usage: TokenUsageCounts,
+        input: Double,
+        cacheHit: Double,
+        output: Double
+    ) -> Double {
+        let cached = max(0, usage.cacheReadInputTokens)
+        let uncached = max(0, usage.inputTokens - cached)
+        return Double(uncached) / 1_000_000 * input
+            + Double(cached) / 1_000_000 * cacheHit
+            + Double(usage.outputTokens + usage.reasoningOutputTokens) / 1_000_000 * output
     }
 
     private static func percent(_ value: Int, of total: Int) -> Double {
@@ -1285,6 +1436,7 @@ private enum UsageRecordSource: String, Codable {
     case nativeCodex
     case nativeCodexSQLite
     case nativeClaudeCode
+    case nativeHermes
     case ccSwitchProxy
     case unknown
 }
@@ -1377,17 +1529,46 @@ private struct UsageAccumulator {
     }
 }
 
+private struct SessionAccumulator {
+    var sessionID: String
+    var tools: [String: Int] = [:]
+    var totalTokens = 0
+    var coldTokens = 0
+    var warmTokens = 0
+    var recordCount = 0
+    var date = ""
+
+    var dominantTool: String {
+        tools.max(by: { $0.value < $1.value })?.key ?? ""
+    }
+
+    var dominantModel: String { "" }   // placeholder for now
+
+    mutating func add(record: UsageRecord) {
+        tools[record.tool, default: 0] += record.usage.totalTokens
+        totalTokens += record.usage.totalTokens
+        coldTokens += record.usage.inputTokens + record.usage.outputTokens
+        warmTokens += record.usage.cacheCreationInputTokens + record.usage.cacheReadInputTokens
+        recordCount += 1
+        if date.isEmpty { date = record.date }
+    }
+}
+
 private struct DailyAccumulator {
     var date: String
     var tools: [String: Int] = [:]
     var models: [String: Int] = [:]
     var totalTokens = 0
+    var coldTokens = 0
+    var warmTokens = 0
     var cost = 0.0
 
     mutating func add(record: UsageRecord, cost: Double) {
         tools[record.tool, default: 0] += record.usage.totalTokens
         models[record.model, default: 0] += record.usage.totalTokens
         totalTokens += record.usage.totalTokens
+        coldTokens += record.usage.inputTokens + record.usage.outputTokens
+        warmTokens += record.usage.cacheCreationInputTokens + record.usage.cacheReadInputTokens
         self.cost += cost
     }
 }

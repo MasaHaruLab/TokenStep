@@ -8,6 +8,7 @@ struct UsageSnapshot: Codable {
     var rhythms: [DailyRhythm]
     var tools: [ToolUsage]
     var models: [ModelUsage]
+    var sessions: [SessionSummary]
     var sources: [String: SourceInfo]
 
     enum CodingKeys: String, CodingKey {
@@ -18,6 +19,7 @@ struct UsageSnapshot: Codable {
         case rhythms
         case tools
         case models
+        case sessions
         case sources
     }
 
@@ -29,6 +31,7 @@ struct UsageSnapshot: Codable {
         rhythms: [DailyRhythm] = [],
         tools: [ToolUsage],
         models: [ModelUsage],
+        sessions: [SessionSummary] = [],
         sources: [String: SourceInfo]
     ) {
         self.generatedAt = generatedAt
@@ -38,6 +41,7 @@ struct UsageSnapshot: Codable {
         self.rhythms = rhythms
         self.tools = tools
         self.models = models
+        self.sessions = sessions
         self.sources = sources
     }
 
@@ -50,6 +54,7 @@ struct UsageSnapshot: Codable {
         rhythms = try container.decodeIfPresent([DailyRhythm].self, forKey: .rhythms) ?? []
         tools = try container.decodeIfPresent([ToolUsage].self, forKey: .tools) ?? []
         models = try container.decodeIfPresent([ModelUsage].self, forKey: .models) ?? []
+        sessions = try container.decodeIfPresent([SessionSummary].self, forKey: .sessions) ?? []
         sources = try container.decodeIfPresent([String: SourceInfo].self, forKey: .sources) ?? [:]
     }
 
@@ -65,6 +70,7 @@ struct UsageSnapshot: Codable {
         rhythms: [],
         tools: [],
         models: [],
+        sessions: [],
         sources: [:]
     )
 }
@@ -87,6 +93,8 @@ struct DailyUsage: Codable, Identifiable {
     var tools: [String: Int]
     var models: [String: Int]
     var totalTokens: Int
+    var coldTokens: Int
+    var warmTokens: Int
     var cost: Double
 
     enum CodingKeys: String, CodingKey {
@@ -94,14 +102,18 @@ struct DailyUsage: Codable, Identifiable {
         case tools
         case models
         case totalTokens = "total_tokens"
+        case coldTokens = "cold_tokens"
+        case warmTokens = "warm_tokens"
         case cost
     }
 
-    init(date: String, tools: [String: Int], models: [String: Int] = [:], totalTokens: Int, cost: Double) {
+    init(date: String, tools: [String: Int], models: [String: Int] = [:], totalTokens: Int, coldTokens: Int = 0, warmTokens: Int = 0, cost: Double) {
         self.date = date
         self.tools = tools
         self.models = models
         self.totalTokens = totalTokens
+        self.coldTokens = coldTokens
+        self.warmTokens = warmTokens
         self.cost = cost
     }
 
@@ -111,7 +123,61 @@ struct DailyUsage: Codable, Identifiable {
         tools = try container.decodeIfPresent([String: Int].self, forKey: .tools) ?? [:]
         models = try container.decodeIfPresent([String: Int].self, forKey: .models) ?? [:]
         totalTokens = try container.decode(Int.self, forKey: .totalTokens)
+        coldTokens = try container.decodeIfPresent(Int.self, forKey: .coldTokens) ?? 0
+        warmTokens = try container.decodeIfPresent(Int.self, forKey: .warmTokens) ?? 0
         cost = try container.decode(Double.self, forKey: .cost)
+    }
+
+    var warmPercent: Double {
+        guard totalTokens > 0 else { return 0 }
+        return Double(warmTokens) / Double(totalTokens) * 100
+    }
+}
+
+struct SessionSummary: Codable, Identifiable {
+    var id: String { sessionID }
+    var sessionID: String
+    var tool: String
+    var model: String
+    var recordCount: Int
+    var totalTokens: Int
+    var coldTokens: Int
+    var warmTokens: Int
+    var date: String
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case tool
+        case model
+        case recordCount = "record_count"
+        case totalTokens = "total_tokens"
+        case coldTokens = "cold_tokens"
+        case warmTokens = "warm_tokens"
+        case date
+    }
+
+    var warmPercent: Double {
+        guard totalTokens > 0 else { return 0 }
+        return Double(warmTokens) / Double(totalTokens) * 100
+    }
+
+    /// 冷启动：热占比极低，基本都是从头重算
+    var isColdStart: Bool { warmPercent < 10 && totalTokens > 50_000 }
+
+    /// 效率低：token 量大但热占比偏低（上下文利用不够）
+    var isBloated: Bool {
+        totalTokens > 200_000 && warmPercent < 50 && !isColdStart
+    }
+
+    /// 健康会话：热占比高，缓存利用充分
+    var isHealthy: Bool { warmPercent >= 50 && totalTokens > 50_000 }
+
+    /// 会话状态标签
+    var label: String {
+        if isColdStart { return "冷启动" }
+        if isBloated { return "效率低" }
+        if isHealthy { return "健康" }
+        return "一般"
     }
 }
 
