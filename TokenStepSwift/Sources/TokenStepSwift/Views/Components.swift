@@ -646,7 +646,7 @@ struct ContributionWallView: View {
                 Text(L("少"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                ForEach([0, Int(Double(goal) * 0.25), Int(Double(goal) * 0.7), goal, goal * 2, goal * 3], id: \.self) { value in
+                ForEach([0, Int(Double(goal) * 0.05), Int(Double(goal) * 0.25), Int(Double(goal) * 0.5), Int(Double(goal) * 0.75), goal], id: \.self) { value in
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
                         .fill(contributionColor(tokens: value, goal: goal))
                         .frame(width: 15, height: 15)
@@ -671,15 +671,14 @@ struct ContributionWallView: View {
 
 func contributionColor(tokens: Int, goal: Int) -> Color {
     guard tokens > 0 else { return Color.tokenTrack }
-    if tokens >= max(goal, 1) {
-        return TokenStepLapProgress(tokens: tokens, goal: goal).color
-    }
     let progress = Double(tokens) / Double(max(goal, 1))
     switch progress {
-    case 0.65...: return TokenStepThemeRuntime.palette.activity4.color
-    case 0.35..<0.65: return TokenStepThemeRuntime.palette.activity3.color
-    case 0.12..<0.35: return TokenStepThemeRuntime.palette.activity2.color
-    default: return TokenStepThemeRuntime.palette.activity1.color
+    case 1.0...:   return TokenStepThemeRuntime.palette.ring4.color
+    case 0.75...:  return TokenStepThemeRuntime.palette.activity4.color
+    case 0.50...:  return TokenStepThemeRuntime.palette.activity3.color
+    case 0.25...:  return TokenStepThemeRuntime.palette.activity2.color
+    case 0.05...:  return TokenStepThemeRuntime.palette.activity1.color
+    default:       return TokenStepThemeRuntime.palette.lowActivity.color
     }
 }
 
