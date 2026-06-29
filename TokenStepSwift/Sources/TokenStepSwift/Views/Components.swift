@@ -580,8 +580,9 @@ struct ContributionWallView: View {
         let today = calendar.startOfDay(for: Date())
         let rawStart = calendar.date(byAdding: .day, value: -(weeks * 7 - 1), to: today) ?? today
         let weekday = calendar.component(.weekday, from: rawStart)
-        let mondayOffset = (weekday + 5) % 7
-        let start = calendar.date(byAdding: .day, value: -mondayOffset, to: rawStart) ?? rawStart
+        // Align FORWARD to the next Monday so the grid always includes today
+        let forwardOffset = (9 - weekday) % 7
+        let start = calendar.date(byAdding: .day, value: forwardOffset, to: rawStart) ?? rawStart
 
         VStack(alignment: .leading, spacing: 16) {
             ZStack(alignment: .bottomLeading) {
