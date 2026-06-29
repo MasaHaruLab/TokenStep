@@ -49,6 +49,7 @@ struct HistoryView: View {
             }
 
             StatsView()
+                .id(appState.snapshot.generatedAt ?? "")
 
             TokenCard {
                 VStack(alignment: .leading, spacing: 18) {

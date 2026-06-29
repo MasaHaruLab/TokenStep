@@ -148,25 +148,23 @@ struct TodayView: View {
                                 : dailyShareText)
                     }
 
-                    if isToday {
-                        Button {
-                            appState.refresh()
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.caption.weight(.heavy))
-                                Text(L("刷新"))
-                                    .font(.caption.weight(.bold))
-                            }
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
+                    Button {
+                        appState.refresh()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.caption.weight(.heavy))
+                            Text(L("刷新"))
+                                .font(.caption.weight(.bold))
                         }
-                        .buttonStyle(.plain)
-                        .background(Color.tokenSurface.opacity(0.9), in: Capsule())
-                        .overlay(Capsule().stroke(Color.black.opacity(0.06)))
-                        .disabled(appState.isRefreshing)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
                     }
+                    .buttonStyle(.plain)
+                    .background(Color.tokenSurface.opacity(0.9), in: Capsule())
+                    .overlay(Capsule().stroke(Color.black.opacity(0.06)))
+                    .disabled(appState.isRefreshing)
                 }
 
                 Spacer(minLength: 0)
