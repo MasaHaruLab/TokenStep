@@ -318,6 +318,18 @@ enum UsageCollector {
                     }
 
                     let identity = claudeIdentity(obj: obj, message: message, path: path, lineNumber: lineNumber)
+                    // Use response+timestamp as dedup key to preserve distinct
+                    // content blocks within the same streaming response.
+                    let dedupKey: String
+                    if let rid = identity.responseID {
+                        dedupKey = "response:\(rid):\(timestamp)"
+                    } else if let rid = identity.requestID {
+                        dedupKey = "request:\(rid):\(timestamp)"
+                    } else if let uid = obj["uuid"] as? String {
+                        dedupKey = "uuid:\(uid)"
+                    } else {
+                        dedupKey = "line:\(path.path):\(lineNumber)"
+                    }
                     let candidate = ClaudeUsageCandidate(
                         date: day,
                         timestamp: timestamp,
@@ -331,11 +343,11 @@ enum UsageCollector {
                         sourcePath: path.path,
                         toolName: toolName
                     )
-                    if let existing = responses[identity.deduplicationKey],
+                    if let existing = responses[dedupKey],
                        !candidate.isPreferred(over: existing) {
                         return
                     }
-                    responses[identity.deduplicationKey] = candidate
+                    responses[dedupKey] = candidate
                 }
             }
             fileRecords = responses.values.map(\.record)
