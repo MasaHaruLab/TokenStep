@@ -1287,11 +1287,12 @@ enum UsageCollector {
 
     private static func estimateCost(usage: TokenUsageCounts, tool: String, model: String) -> Double {
         let lower = model.lowercased()
-        // ── OpenAI (Codex) ──
-        if tool == "Codex", lower.contains("gpt-5.5") {
+        let toolLower = tool.lowercased()
+        // ── OpenAI (Codex) — matches native "Codex" and Hermes "openai-codex" ──
+        if toolLower.contains("codex"), lower.contains("gpt-5.5") {
             return openAICostByParts(usage: usage, input: 5, cachedInput: 0.5, output: 30)
         }
-        if tool == "Codex", lower.contains("gpt-5.4") {
+        if toolLower.contains("codex") && (lower.contains("gpt-5.4") || lower.contains("gpt-5.1")) {
             return openAICostByParts(usage: usage, input: 2.5, cachedInput: 0.25, output: 15)
         }
         // ── Anthropic ──
@@ -1301,6 +1302,9 @@ enum UsageCollector {
         if lower.contains("sonnet") {
             return costByParts(usage: usage, input: 3, output: 15, cacheCreation: 3.75, cacheRead: 0.3)
         }
+        if lower.contains("haiku") {
+            return costByParts(usage: usage, input: 0.8, output: 4, cacheCreation: 1.0, cacheRead: 0.08)
+        }
         // ── DeepSeek ──
         if lower.contains("deepseek"), lower.contains("pro") {
             return deepseekCost(usage: usage, input: 0.435, cacheHit: 0.003625, output: 0.87)
@@ -1308,12 +1312,30 @@ enum UsageCollector {
         if lower.contains("deepseek"), lower.contains("flash") {
             return deepseekCost(usage: usage, input: 0.14, cacheHit: 0.0028, output: 0.28)
         }
-        // ── MiniMax ──
-        if lower.contains("minimax"), lower.contains("m2") {
+        if lower.contains("deepseek") {
+            // deepseek-chat (V3) and any other deepseek variant
+            return deepseekCost(usage: usage, input: 0.14, cacheHit: 0.0028, output: 0.28)
+        }
+        // ── MiniMax — matches all minimax variants ──
+        if lower.contains("minimax") {
             return costByParts(usage: usage, input: 0.30, output: 1.20, cacheCreation: 0.375, cacheRead: 0.06)
         }
+        // ── Gemini ──
+        if lower.contains("gemini"), lower.contains("flash") {
+            return costByParts(usage: usage, input: 0.15, output: 0.60, cacheCreation: 0.0, cacheRead: 0.0)
+        }
+        if lower.contains("gemini"), lower.contains("pro") {
+            return costByParts(usage: usage, input: 1.25, output: 5.0, cacheCreation: 0.0, cacheRead: 0.0)
+        }
+        if lower.contains("gemini") {
+            return costByParts(usage: usage, input: 0.15, output: 0.60, cacheCreation: 0.0, cacheRead: 0.0)
+        }
+        // ── GLM / z.ai ──
+        if lower.contains("glm") || toolLower.contains("zai") {
+            return costByParts(usage: usage, input: 0.07, output: 0.07, cacheCreation: 0.0, cacheRead: 0.0)
+        }
         // ── Generic fallbacks ──
-        if tool == "Claude Code" {
+        if toolLower.contains("claude") {
             return Double(usage.totalTokens) / 1_000_000 * 3
         }
         return Double(usage.totalTokens) / 1_000_000
@@ -1325,8 +1347,17 @@ enum UsageCollector {
         cachedInput: Double,
         output: Double
     ) -> Double {
+        // Handle both conventions:
+        // Codex JSONL: input_tokens > cache_read (cache is a subset of input)
+        // Hermes:      input_tokens < cache_read (separate non-overlapping counters)
         let cached = max(0, usage.cacheReadInputTokens)
-        let uncachedInput = max(0, usage.inputTokens - cached)
+        let uncachedInput: Int
+        if usage.inputTokens >= cached {
+            uncachedInput = max(0, usage.inputTokens - cached)
+        } else {
+            // Hermes convention: input and cache are additive
+            uncachedInput = max(0, usage.inputTokens)
+        }
         return Double(uncachedInput + usage.cacheCreationInputTokens) / 1_000_000 * input
             + Double(cached) / 1_000_000 * cachedInput
             + Double(usage.outputTokens + usage.reasoningOutputTokens) / 1_000_000 * output
@@ -1352,8 +1383,14 @@ enum UsageCollector {
         cacheHit: Double,
         output: Double
     ) -> Double {
+        // Handle both conventions (see openAICostByParts for details)
         let cached = max(0, usage.cacheReadInputTokens)
-        let uncached = max(0, usage.inputTokens - cached)
+        let uncached: Int
+        if usage.inputTokens >= cached {
+            uncached = max(0, usage.inputTokens - cached)
+        } else {
+            uncached = max(0, usage.inputTokens)
+        }
         return Double(uncached) / 1_000_000 * input
             + Double(cached) / 1_000_000 * cacheHit
             + Double(usage.outputTokens + usage.reasoningOutputTokens) / 1_000_000 * output
