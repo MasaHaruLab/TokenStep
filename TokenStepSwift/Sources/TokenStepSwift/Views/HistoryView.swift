@@ -18,6 +18,17 @@ struct HistoryView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
+                        Button {
+                            appState.refresh()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 14, weight: .bold))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.tokenGreenDark)
+                        .opacity(appState.isRefreshing ? 0.4 : 1)
+                        .disabled(appState.isRefreshing)
+                        .padding(.trailing, 4)
                         Text(LFormat("%d 个活跃日", appState.snapshot.totals.activeDays))
                             .font(.callout.weight(.bold))
                             .foregroundStyle(Color.tokenGreenDark)
