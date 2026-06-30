@@ -33,8 +33,13 @@ enum UsageCollector {
         if includeCCSwitchProxyUsage {
             ccSwitch.source = sourceInfo(ccSwitch.source, annotatedWith: deduped)
         }
+        // Fill the pre-install tracking gap with estimated days (only where no real
+        // record exists), so a stretch of heavy work that Claude already auto-pruned
+        // doesn't read as zero usage. See manualBackfillRecords().
+        let existingDates = Set(deduped.records.map(\.date))
+        let backfill = manualBackfillRecords().filter { !existingDates.contains($0.date) }
         return aggregate(
-            records: deduped.records,
+            records: deduped.records + backfill,
             sources: [
                 "Codex": codex.source,
                 "Claude Code": claude.source,
@@ -827,6 +832,66 @@ enum UsageCollector {
         return abs(lhs - rhs) <= tolerance
     }
 
+    /// Estimated backfill for pre-install tracking gaps (April–May 2026).
+    /// The source logs for these days were already auto-pruned by Claude Code's
+    /// transcript cleanup before TokenStep was installed, so they can't be recovered.
+    /// Token counts are ballpark estimates scaled to each period's git workload and
+    /// typical daily usage (early April = light ramp-up era; late-April/May = heavy
+    /// novel-translation work). Attributed to Claude Code / Opus at list price, ~95%
+    /// cache-read (matching the era's measured cache rate). Only applied to dates that
+    /// have no real record.
+    private static func manualBackfillRecords() -> [UsageRecord] {
+        let estimates: [(date: String, tokens: Int)] = [
+            // Early April — light ramp-up era (tracked neighbors 0.1–15M)
+            ("2026-04-03", 4_000_000),
+            ("2026-04-04", 2_000_000),
+            ("2026-04-06", 2_000_000),
+            ("2026-04-07", 2_000_000),
+            ("2026-04-08", 7_000_000),
+            ("2026-04-09", 4_000_000),
+            ("2026-04-10", 6_000_000),
+            ("2026-04-11", 2_000_000),
+            ("2026-04-14", 7_000_000),
+            // Late April – early May — heavy novel-translation sprint
+            ("2026-04-26", 40_000_000),
+            ("2026-04-27", 12_000_000),
+            ("2026-04-28", 12_000_000),
+            ("2026-04-29", 18_000_000),
+            ("2026-04-30", 38_000_000),
+            ("2026-05-01", 38_000_000),
+            ("2026-05-02", 55_000_000),
+            ("2026-05-03", 20_000_000),
+            ("2026-05-04", 22_000_000),
+            ("2026-05-05", 28_000_000),
+            // Mid May — Claude-direct work, Codex idle, transcripts pruned
+            ("2026-05-09", 14_000_000),
+            ("2026-05-14", 10_000_000),
+            ("2026-05-15", 35_000_000),
+            ("2026-05-16", 14_000_000),
+        ]
+        return estimates.map { item in
+            let t = Double(item.tokens)
+            let usage = TokenUsageCounts(
+                inputTokens: Int(t * 0.03),
+                outputTokens: Int(t * 0.02),
+                cacheCreationInputTokens: Int(t * 0.05),
+                cacheReadInputTokens: Int(t * 0.90),
+                reasoningOutputTokens: 0,
+                totalTokens: item.tokens
+            )
+            return UsageRecord(
+                date: item.date,
+                timestamp: "\(item.date)T12:00:00Z",
+                tool: "Claude Code",
+                model: "claude-opus-4-8",
+                usage: usage,
+                source: .nativeClaudeCode,
+                sessionID: "backfill-\(item.date)",
+                dataSource: "estimated_backfill"
+            )
+        }
+    }
+
     private static func aggregate(records: [UsageRecord], sources: [String: SourceInfo]) -> UsageSnapshot {
         var daily = [String: DailyAccumulator]()
         var rhythms = [String: RhythmAccumulator]()
@@ -1309,7 +1374,7 @@ enum UsageCollector {
         }
         // ── Anthropic ──
         if lower.contains("opus") {
-            return costByParts(usage: usage, input: 5, output: 25, cacheCreation: 6.25, cacheRead: 0.5)
+            return costByParts(usage: usage, input: 15, output: 75, cacheCreation: 18.75, cacheRead: 1.5)
         }
         if lower.contains("sonnet") {
             return costByParts(usage: usage, input: 3, output: 15, cacheCreation: 3.75, cacheRead: 0.3)
