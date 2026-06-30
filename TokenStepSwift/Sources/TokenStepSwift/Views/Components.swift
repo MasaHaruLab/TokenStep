@@ -639,11 +639,14 @@ struct ContributionWallView: View {
                 }
             }
 
-            HStack {
-                MetricPill(label: L("活跃"), value: localizedDays(rows.filter { $0.totalTokens > 0 }.count))
-                MetricPill(label: L("达标"), value: localizedDays(rows.filter { $0.totalTokens >= goal }.count))
-                MetricPill(label: L("最高"), value: TokenStepFormat.tokens(rows.map(\.totalTokens).max() ?? 0, compact: true))
+            HStack(spacing: 10) {
+                MetricPill(label: L("活跃天数"), value: localizedDays(rows.filter { $0.totalTokens > 0 }.count))
+                MetricPill(label: L("达标天数"), value: localizedDays(rows.filter { $0.totalTokens >= goal }.count))
+                MetricPill(label: L("单日峰值"), value: TokenStepFormat.tokens(rows.map(\.totalTokens).max() ?? 0, compact: true))
                 Spacer()
+                Text(L("单日用量"))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.tokenInk.opacity(0.6))
                 Text(L("少"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -700,6 +703,17 @@ func tokenToolColor(_ tool: String) -> Color {
     default:
         return Color.tokenInk.opacity(0.52)
     }
+}
+
+func tokenModelColor(_ model: String) -> Color {
+    let lower = model.lowercased()
+    if lower.contains("deepseek") { return tokenToolColor("deepseek") }
+    if lower.contains("minimax") || lower.contains("abab") { return tokenToolColor("minimax-cn") }
+    if lower.contains("claude") || lower.contains("opus") || lower.contains("sonnet") || lower.contains("haiku") || lower.contains("fable") { return tokenToolColor("Claude Code") }
+    if lower.contains("gpt") || lower.contains("codex") { return tokenToolColor("Codex") }
+    if lower.contains("glm") { return Color(red: 0.45, green: 0.40, blue: 0.85) }
+    if lower.contains("gemini") { return Color(red: 0.26, green: 0.52, blue: 0.96) }
+    return Color.tokenInk.opacity(0.52)
 }
 
 func modelDisplayName(_ model: String) -> String {

@@ -176,17 +176,22 @@ struct MainWindowView: View {
 
             VStack(alignment: .trailing, spacing: 9) {
                 HStack(spacing: 10) {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(appState.isRefreshing ? Color.secondary.opacity(0.7) : Color.tokenGreen)
-                            .frame(width: 7, height: 7)
-                        Text(appState.isRefreshing ? L("同步中") : L("已同步"))
-                            .font(.callout.weight(.bold))
+                    Button {
+                        appState.refresh()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 14, weight: .heavy))
+                            .foregroundStyle(Color.tokenInk.opacity(0.76))
+                            .frame(width: 34, height: 34)
+                            .background(Color.tokenSurface, in: Circle())
+                            .overlay(Circle().stroke(Color.black.opacity(0.07)))
+                            .shadow(color: Color.black.opacity(0.055), radius: 9, x: 0, y: 5)
+                            .contentShape(Circle())
                     }
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 8)
-                    .background(Color.tokenSurface, in: Capsule())
-                    .overlay(Capsule().stroke(Color.black.opacity(0.06)))
+                    .buttonStyle(.plain)
+                    .disabled(appState.isRefreshing)
+                    .help(L("刷新"))
+                    .accessibilityLabel(L("刷新"))
 
                     ScreenshotMenuButton(
                         copyTitle: L("复制当前页截图"),

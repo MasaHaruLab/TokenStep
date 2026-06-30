@@ -40,9 +40,6 @@ struct TodayView: View {
             dateSelector
             hero
             todayBreakdownStrip
-            if selectedDay.totalTokens > 0 {
-                todayAdviceCard
-            }
             metricStrip
             if !sessionsForToday.isEmpty {
                 sessionHealthCard
@@ -147,29 +144,54 @@ struct TodayView: View {
                                 ? TokenStepFormat.tokens(appState.monthAverage, compact: true)
                                 : dailyShareText)
                     }
-
-                    Button {
-                        appState.refresh()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.caption.weight(.heavy))
-                            Text(L("刷新"))
-                                .font(.caption.weight(.bold))
-                        }
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                    }
-                    .buttonStyle(.plain)
-                    .background(Color.tokenSurface.opacity(0.9), in: Capsule())
-                    .overlay(Capsule().stroke(Color.black.opacity(0.06)))
-                    .disabled(appState.isRefreshing)
                 }
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 16)
+
+                if selectedDay.totalTokens > 0 {
+                    heroCacheSummary
+                }
             }
         }
+    }
+
+    // MARK: - Cache summary (in hero, next to the ring)
+
+    private var heroCacheSummary: some View {
+        let pct = selectedDay.warmPercent
+        let advice = todayAdvice(warmPercent: pct)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: advice.icon)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(advice.color)
+                Text(advice.title)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Color.tokenInk)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(String(format: "%.0f%%", pct))
+                    .font(.system(size: 36, weight: .heavy, design: .rounded))
+                    .foregroundStyle(advice.color)
+                    .monospacedDigit()
+                Text(L("缓存命中"))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+
+            if !advice.tip.isEmpty {
+                Text(advice.tip)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
+        .frame(width: 260, alignment: .leading)
+        .background(advice.color.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(advice.color.opacity(0.12)))
     }
 
     private var dailyShareText: String {
@@ -225,44 +247,6 @@ struct TodayView: View {
                 }
             }
         )
-    }
-
-    private var todayAdviceCard: some View {
-        let pct = selectedDay.warmPercent
-        let advice = todayAdvice(warmPercent: pct)
-
-        return TokenCard {
-            HStack(spacing: 12) {
-                Image(systemName: advice.icon)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(advice.color)
-                    .frame(width: 28, height: 28)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(advice.title)
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(Color.tokenInk)
-                    if !advice.tip.isEmpty {
-                        Text(advice.tip)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text(String(format: "%.0f%%", pct))
-                        .font(.title3.weight(.heavy))
-                        .foregroundStyle(advice.color)
-                    Text(L("缓存命中"))
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.vertical, 4)
-        }
     }
 
     private func todayAdvice(warmPercent: Double) -> (icon: String, title: String, tip: String, color: Color) {
@@ -490,7 +474,7 @@ struct TodayView: View {
                     Spacer()
                     if let fetchedAt = appState.claudeQuota.fetchedAt ?? appState.codexQuota.fetchedAt {
                         let seconds = max(0, Int(Date().timeIntervalSince(fetchedAt).rounded()))
-                        let text = seconds < 60 ? L("刚刚") : String(format: L("%%d 分钟前"), max(1, seconds / 60))
+                        let text = seconds < 60 ? L("刚刚") : LFormat("%d 分钟前", max(1, seconds / 60))
                         Text(text)
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.secondary)
