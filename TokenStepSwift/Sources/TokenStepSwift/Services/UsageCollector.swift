@@ -899,7 +899,7 @@ enum UsageCollector {
         var models = [ModelKey: UsageAccumulator]()
 
         for record in records {
-            let rawCost = record.costUSD ?? estimateCost(usage: record.usage, tool: record.tool, model: record.model)
+            let rawCost = repricedCostUSD(for: record)
             let cost = rawCost * nzdRate
             daily[record.date, default: DailyAccumulator(date: record.date)].add(record: record, cost: cost)
             if let hour = hour(fromISO: record.timestamp) {
@@ -1360,6 +1360,23 @@ enum UsageCollector {
     private static var nzdRate: Double {
         let stored = UserDefaults.standard.double(forKey: "nzd_rate")
         return stored > 0 ? stored : 1.7717
+    }
+
+    /// Before this date, all Claude Code usage was actually routed through a
+    /// third-party DeepSeek API (CC Switch), so the Claude-reported cost / Claude
+    /// model pricing overstates it. Such records are repriced at DeepSeek V4 Pro
+    /// rates. On/after the cutoff (real Claude Max period), normal pricing applies,
+    /// so new daily usage just accumulates at its true price automatically.
+    /// Other tools (Codex / MiniMax / native DeepSeek) always use their own pricing.
+    private static let claudeDeepseekRepriceCutoff = "2026-05-25"
+
+    private static func repricedCostUSD(for record: UsageRecord) -> Double {
+        if record.tool.lowercased().contains("claude"),
+           record.date < claudeDeepseekRepriceCutoff {
+            // DeepSeek V4 Pro pricing, cache-aware (consistent with all other models)
+            return deepseekCost(usage: record.usage, input: 0.435, cacheHit: 0.003625, output: 0.87)
+        }
+        return record.costUSD ?? estimateCost(usage: record.usage, tool: record.tool, model: record.model)
     }
 
     private static func estimateCost(usage: TokenUsageCounts, tool: String, model: String) -> Double {
