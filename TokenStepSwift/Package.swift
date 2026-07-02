@@ -7,25 +7,15 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "TokenStepSwift", targets: ["TokenStepSwift"]),
-        .executable(name: "TokenStepHelper", targets: ["TokenStepHelper"])
+        .executable(name: "TokenStepSwift", targets: ["TokenStepSwift"])
     ],
     targets: [
+        // The main app auto-includes every file under Sources/TokenStepSwift.
+        // The TokenStepHelper binary is built separately by
+        // script/build_swiftui_and_run.sh via swiftc (it cherry-picks shared
+        // source files, which SwiftPM cannot do without duplicating file
+        // ownership), so it is intentionally not a SwiftPM target here.
         .executableTarget(name: "TokenStepSwift"),
-        .executableTarget(
-            name: "TokenStepHelper",
-            path: "Sources",
-            sources: [
-                "TokenStepSwift/Support/AppPaths.swift",
-                "TokenStepSwift/Support/Localization.swift",
-                "TokenStepSwift/Support/MemoryPressure.swift",
-                "TokenStepSwift/Support/Theme.swift",
-                "TokenStepSwift/Models/UsageModels.swift",
-                "TokenStepSwift/Services/UsageCollector.swift",
-                "TokenStepSwift/Services/DataService.swift",
-                "TokenStepHelper/main.swift"
-            ]
-        ),
         .testTarget(
             name: "TokenStepSwiftTests",
             dependencies: ["TokenStepSwift"]

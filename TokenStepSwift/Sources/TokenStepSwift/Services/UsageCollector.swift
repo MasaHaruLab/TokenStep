@@ -1390,8 +1390,11 @@ enum UsageCollector {
             return openAICostByParts(usage: usage, input: 2.5, cachedInput: 0.25, output: 15)
         }
         // ── Anthropic ──
+        if lower.contains("fable") || lower.contains("mythos") {
+            return costByParts(usage: usage, input: 10, output: 50, cacheCreation: 12.5, cacheRead: 1.0)
+        }
         if lower.contains("opus") {
-            return costByParts(usage: usage, input: 15, output: 75, cacheCreation: 18.75, cacheRead: 1.5)
+            return costByParts(usage: usage, input: 5, output: 25, cacheCreation: 6.25, cacheRead: 0.5)
         }
         if lower.contains("sonnet") {
             return costByParts(usage: usage, input: 3, output: 15, cacheCreation: 3.75, cacheRead: 0.3)
@@ -1410,8 +1413,8 @@ enum UsageCollector {
             // deepseek-chat (V3) and any other deepseek variant
             return deepseekCost(usage: usage, input: 0.14, cacheHit: 0.0028, output: 0.28)
         }
-        // ── MiniMax — matches all minimax variants ──
-        if lower.contains("minimax") {
+        // ── MiniMax — matches all minimax variants, incl. pre-rebrand "abab" naming ──
+        if lower.contains("minimax") || lower.contains("abab") {
             return costByParts(usage: usage, input: 0.30, output: 1.20, cacheCreation: 0.375, cacheRead: 0.06)
         }
         // ── Gemini ──
@@ -1534,7 +1537,10 @@ private struct CollectorResult {
 }
 
 private struct CollectorCache: Codable {
-    static let currentVersion = 4
+    // Bump this whenever parsing/dedup logic changes (forces a full re-parse).
+    // Pricing-only changes (estimateCost) do NOT need a bump — cost is always
+    // recomputed fresh from cached raw token counts, never cached itself.
+    static let currentVersion = 5
 
     var version = currentVersion
     var files: [String: CachedUsageFile] = [:]
