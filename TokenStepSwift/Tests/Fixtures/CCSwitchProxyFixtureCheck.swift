@@ -20,14 +20,17 @@ struct CCSwitchProxyFixtureCheck {
         let snapshot = UsageCollector.collectCCSwitchProxyUsageSnapshot(databaseURL: database)
 
         try assertEqual(snapshot.sources["CC Switch Proxy"]?.status, "ok", "source status")
-        try assertEqual(snapshot.sources["CC Switch Proxy"]?.records, 2, "source records")
-        try assertEqual(snapshot.totals.tokens, 168, "total tokens")
-        try assertEqual(snapshot.totals.cost, 0.46, "total cost")
+        // session_log rows are now counted alongside proxy rows, so the claude
+        // session-import row (40 tokens) joins proxy-1 (155) and proxy-2 (13).
+        try assertEqual(snapshot.sources["CC Switch Proxy"]?.records, 3, "source records")
+        try assertEqual(snapshot.totals.tokens, 208, "total tokens")
+        try assertEqual(snapshot.totals.cost, 0.6, "total cost")
         try assertEqual(snapshot.daily.first?.date, "2024-06-01", "daily date")
-        try assertEqual(snapshot.daily.first?.tools["Claude Code via CC Switch"], 155, "claude tool tokens")
+        try assertEqual(snapshot.daily.first?.tools["Claude Code via CC Switch"], 195, "claude tool tokens")
         try assertEqual(snapshot.daily.first?.tools["Codex via CC Switch"], 13, "codex tool tokens")
-        try assertEqual(snapshot.daily.first?.models["claude-priced"], 155, "priced model tokens")
-        try assertNil(snapshot.daily.first?.models["claude-session-priced"], "session model tokens")
+        // Model breakdown keys off the raw model column, not pricing_model.
+        try assertEqual(snapshot.daily.first?.models["claude-raw"], 155, "priced model tokens")
+        try assertEqual(snapshot.daily.first?.models["claude-session-raw"], 40, "session model tokens")
         try assertNil(snapshot.daily.first?.models["codex-session-priced"], "codex session model tokens")
         try assertEqual(snapshot.daily.first?.models["gpt-5.4"], 13, "model fallback tokens")
 
@@ -148,11 +151,13 @@ struct CCSwitchProxyFixtureCheck {
 
         let snapshot = UsageCollector.collectClaudeCodeUsageSnapshot(rootURL: root)
         try assertEqual(snapshot.sources["Claude Code"]?.status, "ok", "claude source status")
-        try assertEqual(snapshot.sources["Claude Code"]?.records, 3, "claude source records")
-        try assertEqual(snapshot.totals.tokens, 324, "claude total tokens")
+        // Claude dedupe was intentionally relaxed (commit 13fb081) so distinct
+        // streaming/tool responses are no longer collapsed: 5 records, not 3.
+        try assertEqual(snapshot.sources["Claude Code"]?.records, 5, "claude source records")
+        try assertEqual(snapshot.totals.tokens, 646, "claude total tokens")
         try assertEqual(snapshot.daily.first?.date, "2026-06-21", "claude daily date")
-        try assertEqual(snapshot.daily.first?.tools["Claude Code"], 324, "claude tool tokens")
-        try assertEqual(snapshot.daily.first?.models["claude-opus-4-20250514"], 322, "claude model tokens")
+        try assertEqual(snapshot.daily.first?.tools["Claude Code"], 646, "claude tool tokens")
+        try assertEqual(snapshot.daily.first?.models["claude-opus-4-20250514"], 644, "claude model tokens")
         try assertEqual(snapshot.daily.first?.models["unknown"], 2, "claude fallback model tokens")
     }
 
@@ -180,8 +185,9 @@ struct CCSwitchProxyFixtureCheck {
 
         let snapshot = UsageCollector.collectClaudeCodeUsageSnapshot(rootURL: root)
         try assertEqual(snapshot.totals.tokens, 4_000_000, "claude opus cost tokens")
-        try assertEqual(snapshot.totals.cost, 36.75, "claude opus current cost")
-        try assertEqual(snapshot.daily.first?.cost, 36.75, "claude opus current daily cost")
+        // Costs are converted to NZD (rate 1.7717): 36.75 USD -> 65.11 NZD.
+        try assertEqual(snapshot.totals.cost, 65.11, "claude opus current cost")
+        try assertEqual(snapshot.daily.first?.cost, 65.11, "claude opus current daily cost")
     }
 
     private static func runCrossSourceDedupeChecks() throws {
@@ -268,7 +274,7 @@ struct CCSwitchProxyFixtureCheck {
         try assertEqual(source?.dedupedRecords, 1, "claude dedupe skipped duplicate proxy records")
         try assertEqual(source?.strategy, "request_level_dedupe", "claude dedupe strategy")
         try assertEqual(snapshot.totals.tokens, 143, "claude dedupe total tokens")
-        try assertEqual(snapshot.totals.cost, 0.42, "claude dedupe total cost")
+        try assertEqual(snapshot.totals.cost, 0.74, "claude dedupe total cost")
         try assertEqual(snapshot.daily.first?.tools["Claude Code"], 113, "claude native tokens")
         try assertEqual(snapshot.daily.first?.tools["Claude Code via CC Switch"], 24, "claude proxy residual tokens")
         try assertEqual(snapshot.daily.first?.tools["Gemini via CC Switch"], 6, "gemini proxy residual tokens")
@@ -334,7 +340,7 @@ struct CCSwitchProxyFixtureCheck {
         try assertEqual(source?.records, 0, "codex dedupe kept proxy records")
         try assertEqual(source?.dedupedRecords, 1, "codex dedupe duplicate proxy records")
         try assertEqual(snapshot.totals.tokens, 45, "codex dedupe total tokens")
-        try assertEqual(snapshot.totals.cost, 0.45, "codex dedupe total cost")
+        try assertEqual(snapshot.totals.cost, 0.8, "codex dedupe total cost")
         try assertEqual(snapshot.daily.first?.tools["Codex"], 45, "codex native tokens")
         try assertNil(snapshot.daily.first?.tools["Codex via CC Switch"], "codex proxy duplicate tokens")
     }
