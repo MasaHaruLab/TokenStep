@@ -26,7 +26,8 @@ final class UsageCollectorCCSwitchTests: XCTestCase {
         // keys off the raw model column, not pricing_model.
         XCTAssertEqual(snapshot.sources["CC Switch Proxy"]?.records, 3)
         XCTAssertEqual(snapshot.totals.tokens, 208)
-        XCTAssertEqual(snapshot.totals.cost, 0.6)
+        // Proxy rows carry a real logged cost: (0.12 + 0.34 + 0.10) * 1.7717 = 0.99.
+        XCTAssertEqual(snapshot.totals.cost, 0.99)
 
         XCTAssertEqual(snapshot.daily.count, 1)
         XCTAssertEqual(snapshot.daily.first?.date, "2024-06-01")
