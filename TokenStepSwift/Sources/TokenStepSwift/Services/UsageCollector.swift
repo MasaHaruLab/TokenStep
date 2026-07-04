@@ -663,13 +663,32 @@ enum UsageCollector {
         var dedupedProxyRecords = 0
         let skippedProxyRecords = 0
 
+        // Index native records by (date, tool family) so each proxy record only
+        // scans plausible matches instead of the entire native array. isDuplicate()
+        // already requires an identical date and a matching family, so this bucketing
+        // is exact: it turns the previous O(proxy × native) scan into O(proxy + native)
+        // without changing which native a proxy matches. Buckets keep ascending
+        // original index order, so the firstIndex-style first-match semantics hold.
+        var nativeIndexByDateFamily: [String: [Int]] = [:]
+        for (index, record) in nativeRecords.enumerated() {
+            guard record.source != .ccSwitchProxy,
+                  let family = toolFamily(for: record.tool)
+            else {
+                continue
+            }
+            nativeIndexByDateFamily["\(record.date)|\(family)", default: []].append(index)
+        }
+
         for proxyRecord in proxyRecords {
-            guard isDeduplicableProxyRecord(proxyRecord) else {
+            guard isDeduplicableProxyRecord(proxyRecord),
+                  let proxyFamily = toolFamily(for: proxyRecord.tool)
+            else {
                 keptProxyRecords.append(proxyRecord)
                 continue
             }
 
-            if let nativeIndex = nativeRecords.firstIndex(where: { isDuplicate(proxyRecord: proxyRecord, nativeRecord: $0) }) {
+            let bucket = nativeIndexByDateFamily["\(proxyRecord.date)|\(proxyFamily)"] ?? []
+            if let nativeIndex = bucket.first(where: { isDuplicate(proxyRecord: proxyRecord, nativeRecord: nativeRecords[$0]) }) {
                 enrichedNativeRecords[nativeIndex] = enrichedRecord(
                     enrichedNativeRecords[nativeIndex],
                     withProxyCostFrom: proxyRecord
