@@ -29,7 +29,7 @@ final class UsageCollectorClaudeCodeTests: XCTestCase {
         XCTAssertEqual(snapshot.daily.first?.models["unknown"], 2)
     }
 
-    func testClaudeOpusUsesCurrentOpusPricing() throws {
+    func testClaudeOpusPricingSplitsAtChangeover() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("TokenStepClaudeCostTests-\(UUID().uuidString)", isDirectory: true)
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -38,10 +38,32 @@ final class UsageCollectorClaudeCodeTests: XCTestCase {
             try? FileManager.default.removeItem(at: root)
         }
 
-        let log = project.appendingPathComponent("session.jsonl")
-        let line = assistantLine(
-            uuid: "opus-cost",
-            messageID: "msg_opus_cost",
+        // Opus list pricing was cut ($15/$75 -> $5/$25) at the changeover date.
+        // Usage on/after uses the new rate; earlier usage keeps the old rate.
+        let currentLog = project.appendingPathComponent("current.jsonl")
+        try assistantLine(
+            uuid: "opus-cost-current",
+            messageID: "msg_opus_cost_current",
+            timestamp: "2026-07-05T08:00:00Z",
+            model: "claude-opus-4-8",
+            stopReason: "end_turn",
+            input: 1_000_000,
+            output: 1_000_000,
+            cacheCreation: 1_000_000,
+            cacheRead: 1_000_000
+        ).write(to: currentLog, atomically: true, encoding: .utf8)
+
+        let currentSnapshot = UsageCollector.collectClaudeCodeUsageSnapshot(rootURL: root)
+        XCTAssertEqual(currentSnapshot.totals.tokens, 4_000_000)
+        // New rate $5/$25 (+cache 6.25/0.5): 36.75 USD -> 65.11 NZD.
+        XCTAssertEqual(currentSnapshot.totals.cost, 65.11)
+        XCTAssertEqual(currentSnapshot.daily.first?.cost, 65.11)
+
+        try FileManager.default.removeItem(at: currentLog)
+        let historyLog = project.appendingPathComponent("history.jsonl")
+        try assistantLine(
+            uuid: "opus-cost-history",
+            messageID: "msg_opus_cost_history",
             timestamp: "2026-06-21T08:00:00Z",
             model: "claude-opus-4-8",
             stopReason: "end_turn",
@@ -49,15 +71,13 @@ final class UsageCollectorClaudeCodeTests: XCTestCase {
             output: 1_000_000,
             cacheCreation: 1_000_000,
             cacheRead: 1_000_000
-        )
-        try line.write(to: log, atomically: true, encoding: .utf8)
+        ).write(to: historyLog, atomically: true, encoding: .utf8)
 
-        let snapshot = UsageCollector.collectClaudeCodeUsageSnapshot(rootURL: root)
-
-        XCTAssertEqual(snapshot.totals.tokens, 4_000_000)
-        // Costs are converted to NZD (rate 1.7717): 36.75 USD -> 65.11 NZD.
-        XCTAssertEqual(snapshot.totals.cost, 65.11)
-        XCTAssertEqual(snapshot.daily.first?.cost, 65.11)
+        let historySnapshot = UsageCollector.collectClaudeCodeUsageSnapshot(rootURL: root)
+        XCTAssertEqual(historySnapshot.totals.tokens, 4_000_000)
+        // Old rate $15/$75 (+cache 18.75/1.5): 110.25 USD -> 195.33 NZD.
+        XCTAssertEqual(historySnapshot.totals.cost, 195.33)
+        XCTAssertEqual(historySnapshot.daily.first?.cost, 195.3299)
     }
 
     private var fixtureLines: [String] {

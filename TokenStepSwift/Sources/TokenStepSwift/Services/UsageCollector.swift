@@ -1381,19 +1381,23 @@ enum UsageCollector {
         return stored > 0 ? stored : 1.7717
     }
 
-    /// Before this date, all Claude Code usage was actually routed through a
-    /// third-party DeepSeek API (CC Switch), so the Claude-reported cost / Claude
-    /// model pricing overstates it. Such records are repriced at DeepSeek V4 Pro
-    /// rates. On/after the cutoff (real Claude Max period), normal pricing applies,
-    /// so new daily usage just accumulates at its true price automatically.
-    /// Other tools (Codex / MiniMax / native DeepSeek) always use their own pricing.
-    private static let claudeDeepseekRepriceCutoff = "2026-05-25"
+    /// Anthropic cut Opus list pricing from $15/$75 to $5/$25 per million tokens.
+    /// Usage on/after this changeover date is estimated at the new (real, cheaper)
+    /// rate; earlier usage keeps the old rate so the historical total reflects what
+    /// it looked like at the time rather than being retroactively halved. New days
+    /// from here on accrue at the true current price.
+    private static let opusPriceDropDate = "2026-07-05"
 
     private static func repricedCostUSD(for record: UsageRecord) -> Double {
-        if record.tool.lowercased().contains("claude"),
-           record.date < claudeDeepseekRepriceCutoff {
-            // DeepSeek V4 Pro pricing, cache-aware (consistent with all other models)
-            return deepseekCost(usage: record.usage, input: 0.435, cacheHit: 0.003625, output: 0.87)
+        // Claude-family usage is always estimated at Claude list rates — never the
+        // cheaper DeepSeek / CC Switch proxy cost. Opus is split by era: usage
+        // before the changeover keeps the old $15/$75, on/after uses the new
+        // $5/$25 (via estimateCost). Other Claude models were unaffected by the cut.
+        if record.tool.lowercased().contains("claude") {
+            if record.model.lowercased().contains("opus"), record.date < opusPriceDropDate {
+                return costByParts(usage: record.usage, input: 15, output: 75, cacheCreation: 18.75, cacheRead: 1.5)
+            }
+            return estimateCost(usage: record.usage, tool: record.tool, model: record.model)
         }
         return record.costUSD ?? estimateCost(usage: record.usage, tool: record.tool, model: record.model)
     }

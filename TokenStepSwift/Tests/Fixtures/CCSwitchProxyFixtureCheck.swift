@@ -170,10 +170,32 @@ struct CCSwitchProxyFixtureCheck {
             try? FileManager.default.removeItem(at: root)
         }
 
-        let log = project.appendingPathComponent("session.jsonl")
+        // Opus list pricing was cut ($15/$75 -> $5/$25) at the changeover date.
+        // Usage on/after uses the new rate; earlier usage keeps the old rate.
+        let currentLog = project.appendingPathComponent("current.jsonl")
         try claudeAssistantLine(
-            uuid: "opus-cost",
-            messageID: "msg-opus-cost",
+            uuid: "opus-cost-current",
+            messageID: "msg-opus-cost-current",
+            timestamp: "2026-07-05T08:00:00Z",
+            model: "claude-opus-4-8",
+            stopReason: "end_turn",
+            input: 1_000_000,
+            output: 1_000_000,
+            cacheCreation: 1_000_000,
+            cacheRead: 1_000_000
+        ).write(to: currentLog, atomically: true, encoding: .utf8)
+
+        let currentSnapshot = UsageCollector.collectClaudeCodeUsageSnapshot(rootURL: root)
+        try assertEqual(currentSnapshot.totals.tokens, 4_000_000, "claude opus current tokens")
+        // New rate $5/$25 (+cache 6.25/0.5): 36.75 USD -> 65.11 NZD.
+        try assertEqual(currentSnapshot.totals.cost, 65.11, "claude opus current cost")
+        try assertEqual(currentSnapshot.daily.first?.cost, 65.11, "claude opus current daily cost")
+
+        try FileManager.default.removeItem(at: currentLog)
+        let historyLog = project.appendingPathComponent("history.jsonl")
+        try claudeAssistantLine(
+            uuid: "opus-cost-history",
+            messageID: "msg-opus-cost-history",
             timestamp: "2026-06-21T08:00:00Z",
             model: "claude-opus-4-8",
             stopReason: "end_turn",
@@ -181,13 +203,13 @@ struct CCSwitchProxyFixtureCheck {
             output: 1_000_000,
             cacheCreation: 1_000_000,
             cacheRead: 1_000_000
-        ).write(to: log, atomically: true, encoding: .utf8)
+        ).write(to: historyLog, atomically: true, encoding: .utf8)
 
-        let snapshot = UsageCollector.collectClaudeCodeUsageSnapshot(rootURL: root)
-        try assertEqual(snapshot.totals.tokens, 4_000_000, "claude opus cost tokens")
-        // Costs are converted to NZD (rate 1.7717): 36.75 USD -> 65.11 NZD.
-        try assertEqual(snapshot.totals.cost, 65.11, "claude opus current cost")
-        try assertEqual(snapshot.daily.first?.cost, 65.11, "claude opus current daily cost")
+        let historySnapshot = UsageCollector.collectClaudeCodeUsageSnapshot(rootURL: root)
+        try assertEqual(historySnapshot.totals.tokens, 4_000_000, "claude opus history tokens")
+        // Old rate $15/$75 (+cache 18.75/1.5): 110.25 USD -> 195.33 NZD.
+        try assertEqual(historySnapshot.totals.cost, 195.33, "claude opus history cost")
+        try assertEqual(historySnapshot.daily.first?.cost, 195.3299, "claude opus history daily cost")
     }
 
     private static func runCrossSourceDedupeChecks() throws {
@@ -274,7 +296,9 @@ struct CCSwitchProxyFixtureCheck {
         try assertEqual(source?.dedupedRecords, 1, "claude dedupe skipped duplicate proxy records")
         try assertEqual(source?.strategy, "request_level_dedupe", "claude dedupe strategy")
         try assertEqual(snapshot.totals.tokens, 143, "claude dedupe total tokens")
-        try assertEqual(snapshot.totals.cost, 0.74, "claude dedupe total cost")
+        // Claude usage estimates at Claude list rates (Opus pre-changeover $15/$75);
+        // the gemini proxy residual ($0.06) dominates this tiny fixture.
+        try assertEqual(snapshot.totals.cost, 0.11, "claude dedupe total cost")
         try assertEqual(snapshot.daily.first?.tools["Claude Code"], 113, "claude native tokens")
         try assertEqual(snapshot.daily.first?.tools["Claude Code via CC Switch"], 24, "claude proxy residual tokens")
         try assertEqual(snapshot.daily.first?.tools["Gemini via CC Switch"], 6, "gemini proxy residual tokens")
