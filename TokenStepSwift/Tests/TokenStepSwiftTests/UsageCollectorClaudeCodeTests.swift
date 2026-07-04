@@ -18,12 +18,14 @@ final class UsageCollectorClaudeCodeTests: XCTestCase {
         let snapshot = UsageCollector.collectClaudeCodeUsageSnapshot(rootURL: root)
 
         XCTAssertEqual(snapshot.sources["Claude Code"]?.status, "ok")
-        XCTAssertEqual(snapshot.sources["Claude Code"]?.records, 3)
-        XCTAssertEqual(snapshot.totals.tokens, 324)
+        // Claude dedupe was intentionally relaxed (commit 13fb081): distinct
+        // streaming/tool responses are kept, so 5 records / 646 tokens, not 3 / 324.
+        XCTAssertEqual(snapshot.sources["Claude Code"]?.records, 5)
+        XCTAssertEqual(snapshot.totals.tokens, 646)
         XCTAssertEqual(snapshot.daily.count, 1)
         XCTAssertEqual(snapshot.daily.first?.date, "2026-06-21")
-        XCTAssertEqual(snapshot.daily.first?.tools["Claude Code"], 324)
-        XCTAssertEqual(snapshot.daily.first?.models["claude-opus-4-20250514"], 322)
+        XCTAssertEqual(snapshot.daily.first?.tools["Claude Code"], 646)
+        XCTAssertEqual(snapshot.daily.first?.models["claude-opus-4-20250514"], 644)
         XCTAssertEqual(snapshot.daily.first?.models["unknown"], 2)
     }
 
@@ -53,8 +55,9 @@ final class UsageCollectorClaudeCodeTests: XCTestCase {
         let snapshot = UsageCollector.collectClaudeCodeUsageSnapshot(rootURL: root)
 
         XCTAssertEqual(snapshot.totals.tokens, 4_000_000)
-        XCTAssertEqual(snapshot.totals.cost, 36.75)
-        XCTAssertEqual(snapshot.daily.first?.cost, 36.75)
+        // Costs are converted to NZD (rate 1.7717): 36.75 USD -> 65.11 NZD.
+        XCTAssertEqual(snapshot.totals.cost, 65.11)
+        XCTAssertEqual(snapshot.daily.first?.cost, 65.11)
     }
 
     private var fixtureLines: [String] {

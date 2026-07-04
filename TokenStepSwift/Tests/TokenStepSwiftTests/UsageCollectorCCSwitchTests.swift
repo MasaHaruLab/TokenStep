@@ -21,26 +21,29 @@ final class UsageCollectorCCSwitchTests: XCTestCase {
         let snapshot = UsageCollector.collectCCSwitchProxyUsageSnapshot(databaseURL: database)
 
         XCTAssertEqual(snapshot.sources["CC Switch Proxy"]?.status, "ok")
-        XCTAssertEqual(snapshot.sources["CC Switch Proxy"]?.records, 2)
-        XCTAssertEqual(snapshot.totals.tokens, 168)
-        XCTAssertEqual(snapshot.totals.cost, 0.46)
+        // session_log rows count alongside proxy rows, so the claude session-import
+        // row (40 tokens) joins proxy-1 (155) and proxy-2 (13). Model breakdown
+        // keys off the raw model column, not pricing_model.
+        XCTAssertEqual(snapshot.sources["CC Switch Proxy"]?.records, 3)
+        XCTAssertEqual(snapshot.totals.tokens, 208)
+        XCTAssertEqual(snapshot.totals.cost, 0.6)
 
         XCTAssertEqual(snapshot.daily.count, 1)
         XCTAssertEqual(snapshot.daily.first?.date, "2024-06-01")
-        XCTAssertEqual(snapshot.daily.first?.tools["Claude Code via CC Switch"], 155)
+        XCTAssertEqual(snapshot.daily.first?.tools["Claude Code via CC Switch"], 195)
         XCTAssertEqual(snapshot.daily.first?.tools["Codex via CC Switch"], 13)
-        XCTAssertEqual(snapshot.daily.first?.models["claude-priced"], 155)
-        XCTAssertNil(snapshot.daily.first?.models["claude-session-priced"])
+        XCTAssertEqual(snapshot.daily.first?.models["claude-raw"], 155)
+        XCTAssertEqual(snapshot.daily.first?.models["claude-session-raw"], 40)
         XCTAssertNil(snapshot.daily.first?.models["codex-session-priced"])
         XCTAssertEqual(snapshot.daily.first?.models["gpt-5.4"], 13)
 
         let tools = Dictionary(uniqueKeysWithValues: snapshot.tools.map { ($0.tool, $0.tokens) })
-        XCTAssertEqual(tools["Claude Code via CC Switch"], 155)
+        XCTAssertEqual(tools["Claude Code via CC Switch"], 195)
         XCTAssertEqual(tools["Codex via CC Switch"], 13)
 
         let models = Dictionary(uniqueKeysWithValues: snapshot.models.map { ("\($0.tool ?? "")|\($0.model)", $0.tokens) })
-        XCTAssertEqual(models["Claude Code via CC Switch|claude-priced"], 155)
-        XCTAssertNil(models["Claude Code via CC Switch|claude-session-priced"])
+        XCTAssertEqual(models["Claude Code via CC Switch|claude-raw"], 155)
+        XCTAssertEqual(models["Claude Code via CC Switch|claude-session-raw"], 40)
         XCTAssertNil(models["Codex via CC Switch|codex-session-priced"])
         XCTAssertEqual(models["Codex via CC Switch|gpt-5.4"], 13)
     }
