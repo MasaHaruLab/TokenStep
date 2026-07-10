@@ -38,9 +38,12 @@ final class AppState: ObservableObject {
 
     var today: DailyUsage {
         let key = DateFormatter.tokenStepDay.string(from: Date())
-        return snapshot.daily.last(where: { $0.date == key })
-            ?? snapshot.daily.last
-            ?? DailyUsage(date: key, tools: [:], totalTokens: 0, cost: 0)
+        return Self.dailyUsage(for: key, in: snapshot)
+    }
+
+    static func dailyUsage(for date: String, in snapshot: UsageSnapshot) -> DailyUsage {
+        snapshot.daily.last(where: { $0.date == date })
+            ?? DailyUsage(date: date, tools: [:], totalTokens: 0, cost: 0)
     }
 
     var progress: Double {
